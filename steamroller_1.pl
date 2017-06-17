@@ -5,14 +5,12 @@ use String::Similarity;
 
 #if $version is greater than 0.1, the steamroller will delete temporary files
 #and add a brand marker to identify the file as a steamroller-generated file.
-my $version = 0.1;
+my $version = 0.2;
 
 #determines how close an element name guess must be to rename a bad element.
-my $tolerance = 0.7;
+my $tolerance = 0.4;
 
-#nu_roller improves upon mu_roller.
-#nu_roller fixes problems with encountering term-internal elements
-#outside of the termEntry.
+#steamroller 0.2 adds data category specification compliance control
 
 #opens file $tft to store termEntry elements
 open (my $tft,'>','temp_file_text.txt'); 
@@ -241,7 +239,7 @@ my %atts=(
 'transacGrp' 	  => [qw(id)],
 'note' 			  => [qw(id)],
 'ref' 			  => [qw(id xml:lang type target datatype)],
-'xref' 			  => [qw(id target)],
+'xref' 			  => [qw(id target type)],
 'transac' 		  => [qw(id xml:lang type target datatype)],
 'transacNote' 	  => [qw(id xml:lang type target datatype)],
 'date' 			  => [qw(id)],
@@ -300,7 +298,7 @@ sub store {
 	
 }
 
-#clears variables used in processing termEntry elements, so that large files don't leake memory
+#clears variables used in processing termEntry elements, so that large files don't leak memory
 sub wipe {
 	#cuts memory usage to a 1/3 of otherwise... not terrible
 	@note = ();
@@ -325,12 +323,165 @@ sub wipe {
 	@ph = ();
 }
 
+my %concomp = (
+'administrativeStatus'		=> 'termNote',
+'geographicalUsage'			=> 'termNote',
+'grammaticalGender'			=> 'termNote',
+'partOfSpeech'				=> 'termNote',
+'termLocation'				=> 'termNote',
+'termType'					=> 'termNote',
+'context'					=> 'descrip',
+'definition'				=> 'descrip',
+'subjectField'				=> 'descrip',
+'crossReference'			=> 'ref',
+'externalCrossReference'	=> 'xref',                       	
+'xGraphic'					=> 'xref',                                     	
+'customerSubset'			=> 'admin',                              	
+'projectSubset'				=> 'admin',
+'source'					=> 'admin',
+'responsibility'			=> 'transacNote',
+'transactionType'			=> 'transac',
+'DCSName'					=> 'p',
+'XCSURI'					=> 'p',
+'XCSContent'				=> 'p',    
+'respPerson'				=> 'refObjectList',
+'fn'						=> 'item',
+'n'							=> 'item',
+'nickname'					=> 'item',
+#'photo'					=> 'item', #item types imported from 
+#'bday'						=> 'item',	#https://tools.ietf.org/html/rfc6350
+#'anniversary'				=> 'item', #most left out to avoid
+#'gender'					=> 'item', #clogging up the algorithms 
+'adr'						=> 'item', 
+'tel'						=> 'item', 
+'email'						=> 'item', 
+#'impp'						=> 'item',
+#'lang'						=> 'item', #future version should recognize these
+#'tz'						=> 'item', #as valid but not use them as guesses
+#'geo'						=> 'item',
+'title'						=> 'item',
+'role'						=> 'item',
+#'logo'						=> 'item',
+#'org'						=> 'item',
+#'member'					=> 'item',
+#'related'					=> 'item',
+#'categories'				=> 'item',
+#'prodid'					=> 'item',
+#'rev'						=> 'item',
+#'sound'					=> 'item',
+#'uid'						=> 'item',
+#'clientpidmap'				=> 'item',
+#'url'						=> 'item',
+#'version'					=> 'item',
+'bold'						=> 'bpt',	   # = Bold                      
+'ulined'					=> 'bpt',     # = Underline              
+'dulined'					=> 'bpt',     # = Double-underlined      
+'color'						=> 'bpt',     # = Color change           
+'struct'					=> 'bpt',     # = XML/SGML structure
+'italic'					=> 'bpt',     # = Italic
+'scap'						=> 'bpt',     # = Small caps
+'font'						=> 'bpt',     # = Font change
+'link'						=> 'bpt',     # = Linked text
+'index'						=> 'ph',	   # = Index marker          these are text     
+'time'						=> 'ph',      # = Time                  markup tags
+'enote'						=> 'ph',      # = End-note                 
+'image'						=> 'ph',      # = Image                    
+'lb'						=> 'ph',      # = Line break               
+'inset'						=> 'ph',      # = Inset                        
+'date'						=> 'ph',      # = Date
+'fnote'						=> 'ph',      # = Footnote
+'alt'						=> 'ph',      # = Alternate text
+'pb'						=> 'ph',      # = Page break			bpt ph types inhereted from
+);									   # http://www.ttt.org/oscarstandards/tmx/tmxnotes.htm
+
+
+#allowed picklist values for the given constraints
+
+my %picklist = (
+"administrativeStatus"		=> [qw( preferredTerm-admn-sts
+					  				admittedTerm-admn-sts
+					  				deprecatedTerm-admn-sts
+					  				supersededTerm-admn-sts)],
+                               
+"grammaticalGender"	  		=> [qw( masculine feminine
+					  				neuter other)],
+                      		   
+"partOfSpeech"		  		=> [qw( noun verb adjective
+					  				adverb properNoun other)],
+                      		   
+"termType"			  		=> [qw( abbreviation acronym fullForm
+									shortForm variant phrase)],
+);
+
+#allowed levels for the given constraints
+my %levels = (
+'context'=>['tig'],
+'definition'=>['langSet','termEntry'],
+'subjectField'=>['termEntry'],
+);
+
+sub constraint {
+	#takes one argument, an element
+	my ($section) = @_;
+	
+	#proceed 
+	
+	if (my $type = $section->att('type')) {
+		
+		#ignore the martif
+		return 0 if ($section->name() eq 'martif');
+		
+		#print $type,"\n";
+		
+		if (grep {$type eq $_} keys %concomp) {
+			
+			if ($concomp{$type} eq $section->name()) {
+#				print "No change '",$section->name(),"' type $type \n";
+				return 0;
+			}
+			
+#			print "Element '",$section->name(),"' type $type changed to ",$concomp{$type},"\n";
+			return $type;
+			#gives correct element for data category
+			
+			
+		} 
+		
+		#same code as used in namecheck, perhaps good for consolidation
+		
+		my %relevance = map {$_ => similarity $type,$_} keys %concomp;
+	
+		my @j = (reverse sort {$relevance{$a} <=> $relevance{$b}} keys %relevance);
+	
+		foreach my $guess (@j) {
+		
+			#check if guess is worth listening to
+			#print $guess.' '.$relevance{$guess}.' ';
+			if ($relevance{$guess}>$tolerance) {
+				#print "\n",$type, "\t",$relevance{$guess},"\t $guess","\n";
+#				print "'",$section->name(),"' type $type changed to $guess ",$concomp{$guess},"\n";
+				return $guess;
+			
+			}
+		
+		}
+		
+	}
+	
+	else {
+#		print $section->name()," is N/A.\n";
+		return 0;
+		
+	}
+}
+
 #processes a termElement, wherever encountered.
 sub handle_term {
 	
 	my ($t,$section) = @_;
-	wipe();
+###	wipe();
 	#check attributes
+	$section->add_id() unless $section->att('id');
 	
 	foreach my $m ($section->att_names()) {
 		
@@ -355,14 +506,14 @@ sub handle_term {
 		unless (name_check($t,$child)) {
 			
 			my $cname=$child->name();
-			#for aux items, make transacGrp, which can hold this kind of info
-			$child->set_name("transacGrp");
-			my $temp = XML::Twig::Elt->new('transac' => $cname);
-			$temp->set_att('type' => 'steamroller');
+			#for aux items, make note, which can hold this kind of info
+			$child->set_name("note");
+			my $temp = XML::Twig::Elt->new(PCDATA => $cname);
+			#$temp->set_att('id' => 'steamroller');
 		
 			$temp->paste(last_child => $child);
 		
-			#store it. will not fail because transacGrp is stackable
+			#store it. will not fail because note is stackable
 			store($section);
 		}
 
@@ -395,7 +546,7 @@ sub handle_term {
 		
 		unless (grep{$cname eq $_} @{$comp{$pname}}) {
 			#within this bracket, only misplaced things enter
-			print $cname,' ', $pname, ' ',$pcstorage{$pname},"\n";
+#			print $cname,' ', $pname, ' ',$pcstorage{$pname},"\n";
 			
 			#handle things that only contain text
 			
@@ -410,7 +561,9 @@ sub handle_term {
 				
 				my $fate = $pcstorage{$pname};
 				
-				if (not $fate) #the current parent cannot have element children
+				if (not $fate or $cname eq 'xref') 
+				#the current parent cannot have element children
+				#or it contains important data?
 				
 				#simple move the element up and try again
 				
@@ -429,8 +582,8 @@ sub handle_term {
 				#rename it to be something that works
 				
 				{
-					
-					$child->set_tag($fate);
+########					print $child->name(),' ',$fate,"\n";
+					$child->set_name($fate);
 					
 				}
 				
@@ -490,7 +643,205 @@ sub handle_term {
 		
 	}
 	
+	#tidy termEntry
+	
+	@children = $section->children();
+	
+	while ($child = shift @children) {
+			
+		my $cname = $child->name();
+		
+		#for the time being, we will just handle things on
+		#a case by case basis.
+		
+		#descrip level, to be handled in addition to the exclusive cases below
+		
+		if ($cname eq 'descrip') {
+			
+			my $type = $child->att('type');
+			
+			if (grep{$type eq $_} keys %levels) {
+				
+				#move descrip with its parent
+				
+				my $head = $child->parent()->name() eq 'descripGrp' ? $child->parent() : $child;
+				
+				my $pname = $head->parent()->name();
+				
+				unless (grep{$pname eq $_} @{$levels{$type}}) {
+					print $pname,"\n";
+					print $type,"\n";
+					if ($head->parent()->parent()->name() eq $levels{$type}[0]) {
+						$head->move(first_child=>$head->parent()->parent());
+					} #not sure why this isn't getting removed down below...
+					
+				}
+				
+			}
+			
+		}
+		
+		#a large list of exclusive cases
+		
+		if ($cname eq 'descripGrp') {
+			
+			#erase() leaves children in their parent's place.
+			#any orphaned admin element raise a level.
+			push @children,$child->children();
+			$child->erase() unless $child->has_child('descrip');
+			
+		} elsif ($cname eq 'admin')
+		
+		#the following code bracket is a hacky fix 
+		#to the hacky way I am enforcing constraints right now
+		
+		{
+			my $type = $child->att('type');
+			my $pname = $child->parent()->name();
+			unless ('customerSubset projectSubset source'=~/$type/) {
+				if (grep {$concomp{$type} eq $_} @{$comp{$pname}}) {
+#					print $type,' ',$concomp{$type},' ',$pname,"\n";
+					$child->set_name($concomp{$type});
+					$cname=$concomp{$type};
+					push @children, $child->parent();
+				}
+				else
+				{
+					if ($pname eq 'descripGrp') 
+					
+					{
+						
+						my $elt =
+						XML::Twig::Elt->new
+						(descrip=>
+						{type=>'context'}=>
+						$child->att('type').":".$child->text);
+						
+						$elt->replace($child);
+					}
+					
+					else
+					
+					{
+						
+						my $elt =
+						XML::Twig::Elt->new
+						(note=>$child->att('type').":".$child->text);
+						
+						$elt->replace($child);
+					}
+					
+				}
+				
+			}
+			
+		}
+		
+		elsif ($cname eq 'tig')
+		
+		{
+			
+			$child->move(last_child=>$child->parent());
+			
+			$child->
+				sort_children( 
+				sub {#print $_[0]->name(),"\n";
+					return 2 if $_[0]->name() eq 'term';
+				return 1 if $_[0]->name() eq 'termNote'}, 
+				type => 'numeric', order => 'reverse');
+			
+			
+		}
+		
+		elsif ($cname eq 'langSet') {
+			
+			$child->move(last_child=>$child->parent());
+			#my $lang = defined $child->att('xml:lang') ? $child->att('xml:lang') : "EN";
+			my $lang =$child->att('xml:lang');
+#			print $lang,"\n";
+			if ($lang ne lc $lang) {
+			#if (undef $child->att('xml:lang') or $lang ne lc $lang) {
+			
+				$child->set_att('xml:lang'=>lc $lang);
+			}
+			
+		}
+		
+		elsif ($cname eq 'trasnacGrp') 
+		
+		{
+			$child->
+				sort_children( 
+				sub {return 1 if $_[0]->name() eq 'transac'}, 
+				type => 'numeric', order => 'reverse');
+		}
+		
+		elsif ($cname eq 'xref') {
+			#print "xref\n";
+			unless ($child->att('target'))
+			
+			{
+				$child->set_att(target => $child->text());
+			}
+		}
+		
+		#this one is just hard coded for now
+		
+		elsif ($cname eq 'transac') {
+			#cheap perl 'in' clone, has its issues
+			my $text = $child->text();
+			unless ('origination modification' =~ /$text/) {
+				#print similarity ($text,'origination'),' ',similarity ($text,'modification'),'\n';
+				$child->set_text(
+				similarity ($text,'origination')>=similarity ($text,'modification') ?
+				'origination':'modification');
+			}
+		}
+		
+		elsif ($cname eq 'termNote') {
+			my $type = $child->att('type');
+			if (' administrativeStatus grammaticalGender partOfSpeech termType ' =~ / $type /) {
+				
+				my $text = $child->text();
+				#print "$type $text hi ";
+				unless (grep{$text eq $_} @{$picklist{$type}}) {
+				
+					#store the invalid value in a note, which also can go in a tig
+					my $note_text = 'original '.$type.':'.$text;
+					my $elt = XML::Twig::Elt->new('note'=>$note_text);
+					$elt->paste(last_child => $child->parent());
+					
+					my %relevance = map {$_ => similarity $text,$_} @{$picklist{$type}};
+	
+					my @j = (reverse sort {$relevance{$a} <=> $relevance{$b}} keys %relevance);
+	
+					my $guess = $j[0];
+					
+					#if ($relevance{$guess}>$tolerance) {
+					#	$child->set_text($guess);
+					#} else {
+					#	$child->set_text($guess);
+					#}
+					if ('grammaticalGender partOfSpeech' =~ /$type/ and $relevance{$guess}<$tolerance) {
+						$child->set_text('other');
+					} else {
+						$child->set_text($guess);
+					}
+					
+				}
+				
+				#print "\n";
+			}
+		}
+		
+		push @children, $child->children();
+	
+		
+			
+	}	
+	
 	$section->print($tft);
+	wipe();
 	$section->delete();
 	return 1;
 	
@@ -510,6 +861,21 @@ sub name_check {
 	
 	my $pname = $section->level()>0 ? $section->parent()->name() : 0;
 	
+	#this is used to ensure that proper data categories are in the right kind of element
+	
+	
+	if (my $ntype = constraint($section)) 
+	
+	{ 			
+#		print "|"x10,$concomp{$ntype}," ",$ntype,"\n";
+		$section->set_att(type=>$ntype);
+		$section->set_name($concomp{$ntype});
+		$cname = $concomp{$ntype};
+		#$section->set_name($xcsname) if $cname ne $xcsname;
+		
+	}
+	
+	
 	if (grep {$cname eq $_} @{$comp{$pname}}) {
 		
 		#stores the item in the correct variable if valid and not duplicate
@@ -521,7 +887,7 @@ sub name_check {
 		}
 		
 	}
-	
+##	print "7"x7,$cname,"\n";
 	my %relevance = map {$_ => similarity $cname,$_} keys %refs;
 	
 	my @j = (reverse sort {$relevance{$a} <=> $relevance{$b}} keys %relevance);
@@ -816,6 +1182,34 @@ sub location_control {
 		
 	}
 	
+	unless 
+	($section->first_descendant(
+	sub {return 1 if $_[0]->att('type') and $_[0]->att('type') eq 'XCSURI'}
+	)) 
+	
+	#unless the XCSURI is defined, we will define it.
+	
+	{
+		#my $elt= XML::Twig::Elt->new(encodingDesc => { p => 'TBXBasicXCSV02.xcs' });
+		#$elt->paste($martifHeader);
+		if (defined $encodingDesc) 
+		
+		{
+			my $elt = XML::Twig::Elt->new(p=>{type=>'XCSURI'});
+			$elt->paste($encodingDesc);
+		}
+		
+		else
+		
+		{
+			$encodingDesc=XML::Twig::Elt->new('encodingDesc');
+			$encodingDesc->paste($martifHeader);
+			my $elt = XML::Twig::Elt->new(p=>{type=>'XCSURI'},'TBXBasicXCSV02.xcs');
+			$elt->paste($encodingDesc);
+		}
+		
+	}
+	
 	#foreach my $c (keys %comp) {
 	foreach my $c (@aux_items) {
 		#condition to filter out elements with single children, and ignore undefined
@@ -831,6 +1225,7 @@ sub location_control {
 				#put the element last——resulting in the correct order.
 			
 				if (ref($ref) eq 'REF') {
+#					print "Pasting " . ${$ref}->name();
 					${$ref}->move(last_child=>${$ref}->parent());
 				} elsif (ref($ref) eq 'ARRAY') {
 					foreach my $x (@{$ref}) {
@@ -842,6 +1237,8 @@ sub location_control {
 			}
 		}
 	}	
+	
+	
 	
 	return 1;
 	
@@ -870,6 +1267,8 @@ pretty_print => 'indented',
 
 twig_handlers => {
 	
+	output_html_doctype => 1,
+	
 	#Handles termEntry whole, including children
 	termEntry => \&handle_term,
 	
@@ -886,7 +1285,21 @@ twig_handlers => {
 	
 );
 
+$twig->set_id_seed('c');
+
 $twig->parsefile($file);
+
+#steamroller should leave things alone unless they are wrong
+
+unless ($twig->doctype()=~/TBXBasiccoreStructV02/) 
+
+{
+	
+	$twig->set_doctype('martif',"TBXBasiccoreStructV02.dtd");
+	
+}
+
+
 
 #stores the non-termEntry data to a string; this is very short compared to termEntry data.
 my $auxilliary = $twig->sprint();
@@ -897,7 +1310,7 @@ open($tft,'<','temp_file_text.txt');
 
 #open final output file
 open(my $out,">",'result.tbx');
-
+###print $out '<!DOCTYPE martif SYSTEM "TBXBasiccoreStructV02.dtd">'."\n";
 #finds a placeholder which marks the proper location of the termEntry, inserts all termEntry
 foreach my $line (split(/\n/,$auxilliary)) {
 	if ($line =~ /      <placeholder/) {
