@@ -1,21 +1,25 @@
 use warnings;
 use strict;
+
+#XML::Twig provides the core XML editing functionality to Steamroller
 use XML::Twig;
+
+#Similarity compares two strings to see how similar they are
+#This is used to guess what an invalid element should be called (Term_Entry -> termEntry)
 use String::Similarity;
+
+#Used with Similarity to put a lower bound on guess validity.
+#A lower tolerance can catch more matches but may make bad guesses.
+my $tolerance = 0.4;
 
 #if $version is greater than 0.1, the steamroller will delete temporary files
 #and add a brand marker to identify the file as a steamroller-generated file.
 my $version = 0.2;
 
-#determines how close an element name guess must be to rename a bad element.
-my $tolerance = 0.4;
-
-#steamroller 0.2 adds data category specification compliance control
-
-#opens file $tft to store termEntry elements
+#opens temporary file to store termEntry elements
 open (my $tft,'>','temp_file_text.txt'); 
 
-#variables which store elements as they are encountered, used later for rearrangement
+#initialize variables which store elements as they are encountered, used later for rearrangement
 my(
 $martif,
 $martifHeader,
@@ -101,7 +105,7 @@ my %refs=(
 'ph' => \@ph,
 );
 
-#hash of element compatibility, parent to child
+#hash of element compatibility, mapped parent to child
 my %comp=(
 0 => ['martif'],
 'martif' => ['martifHeader','text'],
@@ -278,27 +282,51 @@ my %pcstorage = (
 'p'			=>0,
 );
 
-#stores an ELT object into a variable by the %refs hash above.
+#stores an ELT object into a variable referenced the %refs hash above.
+#Used to check duplication of unique elements, various other uses.
 sub store {
 	
 	my $item = $_[0];
+	
+	#Retrieves the reference to the named variable
 	my $ref=$refs{$item->name()};
 	
-	if (ref($ref) eq 'ARRAY') {
+	
+	if (ref($ref) eq 'ARRAY') 
+	
+	#If ARRAY, then the element may be duplicated, push reference to array
+	{
 		push @{$ref}, $item; 
-	} elsif (ref($ref) eq 'SCALAR') {
+	} 
+	
+	elsif (ref($ref) eq 'SCALAR') 
+	
+	#SCALAR means the element should be unique, but is not taken yet.
+	{
 		${$ref} = $item;
-	} elsif (ref($ref) eq 'REF') {
+	} 
+	
+	elsif (ref($ref) eq 'REF') 
+	
+	#REF means the element's reference is filled, and must be unique.
+	#returns 0 to indicate failure to store, element will be renamed.
+	{
 		return 0;		
-	} else {
+	} 
+	
+	else 
+	#The element was not in the hash of refs; should never be trigged.
+	{
 		die "Unhandled type ".$item->name().' '.ref($ref)."\n";
 	}
 	
+	#Indicates success, triggered when ref was ARRAY or SCALAR
 	return 1;
 	
 }
 
-#clears variables used in processing termEntry elements, so that large files don't leak memory
+#clears variables used in processing termEntry elements
+#so that large files don't leak memory
 sub wipe {
 	#cuts memory usage to a 1/3 of otherwise... not terrible
 	@note = ();
@@ -323,6 +351,7 @@ sub wipe {
 	@ph = ();
 }
 
+#maps data categories to the element they occur in.
 my %concomp = (
 'administrativeStatus'		=> 'termNote',
 'geographicalUsage'			=> 'termNote',
@@ -394,9 +423,7 @@ my %concomp = (
 'pb'						=> 'ph',      # = Page break			bpt ph types inhereted from
 );									   # http://www.ttt.org/oscarstandards/tmx/tmxnotes.htm
 
-
-#allowed picklist values for the given constraints
-
+#allowed picklist values for the listed constraints
 my %picklist = (
 "administrativeStatus"		=> [qw( preferredTerm-admn-sts
 					  				admittedTerm-admn-sts
@@ -420,46 +447,46 @@ my %levels = (
 'subjectField'=>['termEntry'],
 );
 
+#Makes sure that data category types occur in the right elements, per XCS
 sub constraint {
+	
 	#takes one argument, an element
 	my ($section) = @_;
 	
-	#proceed 
-	
-	if (my $type = $section->att('type')) {
+	if (my $type = $section->att('type')) 
+	#only trigger if element has 'type' attribute, indicating DCA data
+	{
 		
 		#ignore the martif
 		return 0 if ($section->name() eq 'martif');
 		
-		#print $type,"\n";
-		
-		if (grep {$type eq $_} keys %concomp) {
+		if (grep {$type eq $_} keys %concomp) 
+		#Trigger if the type is one of the allowed types
+		{
 			
-			if ($concomp{$type} eq $section->name()) {
-#				print "No change '",$section->name(),"' type $type \n";
+			if ($concomp{$type} eq $section->name()) 
+			#Exit if the valid type is in the right element
+			{
 				return 0;
 			}
 			
-#			print "Element '",$section->name(),"' type $type changed to ",$concomp{$type},"\n";
+			#If the type was valid by the element mismatched,
+			#return the correct element name
 			return $type;
-			#gives correct element for data category
 			
 			
 		} 
 		
-		#same code as used in namecheck, perhaps good for consolidation
+		#the type is not valid; guess closest possible type; see name_check
 		
 		my %relevance = map {$_ => similarity $type,$_} keys %concomp;
 	
 		my @j = (reverse sort {$relevance{$a} <=> $relevance{$b}} keys %relevance);
 	
 		foreach my $guess (@j) {
-		
-			#check if guess is worth listening to
-			#print $guess.' '.$relevance{$guess}.' ';
+	
 			if ($relevance{$guess}>$tolerance) {
-				#print "\n",$type, "\t",$relevance{$guess},"\t $guess","\n";
-#				print "'",$section->name(),"' type $type changed to $guess ",$concomp{$guess},"\n";
+				
 				return $guess;
 			
 			}
@@ -468,8 +495,10 @@ sub constraint {
 		
 	}
 	
-	else {
-#		print $section->name()," is N/A.\n";
+	else 
+	#Exit if not DCA element
+	{
+		
 		return 0;
 		
 	}
@@ -479,17 +508,18 @@ sub constraint {
 sub handle_term {
 	
 	my ($t,$section) = @_;
-###	wipe();
-	#check attributes
+	
+	#add generic incrementing id tag
 	$section->add_id() unless $section->att('id');
 	
+	#check attributes of termEntry
 	foreach my $m ($section->att_names()) {
 		
 		unless (grep {$m eq $_} @{$atts{$section->name()}}) {
 			
+			#stores any invalid attributes as a note in termEntry
 			my $value = $section->att($m);
-			my $temp = XML::Twig::Elt->new('p'=>$value);
-			$temp->set_att("id"=>$m);
+			my $temp = XML::Twig::Elt->new('note'=>$m.":".$value);
 			$temp->paste(last_child=>$section);
 			store($temp);
 			$section->del_att($m);
@@ -497,30 +527,41 @@ sub handle_term {
 	}
 	
 	#perform name and attribute check for all children of the termEntry
+
 	my @children = $section->children();
 	my $child;
 	
 	#name check for each child
-	while ($child = shift @children) {
+	while ($child = shift @children) 
+	#takes from stack one at a time; it is repopulated during loop
+	{
 		
-		unless (name_check($t,$child)) {
+		unless (name_check($t,$child)) 
+		#triggers if name_check fails to validate or correct name, returning 0;
+		{
+			
+			#creates a dummy note containing the invalid name
+			#dumps it and the invalid elements children in place
 			
 			my $cname=$child->name();
-			#for aux items, make note, which can hold this kind of info
-			$child->set_name("note");
-			my $temp = XML::Twig::Elt->new(PCDATA => $cname);
-			#$temp->set_att('id' => 'steamroller');
-		
+			my $temp = XML::Twig::Elt->new(note => $cname);
 			$temp->paste(last_child => $child);
+			$child->erase(); 
 		
-			#store it. will not fail because note is stackable
+			#stores it, will not fail because note is stackable
 			store($section);
+			
 		}
 
-		foreach my $m ($child->att_names()) {
+		foreach my $m ($child->att_names()) 
+		#checks each attribute of the current child
+		{
 			
-			unless (grep {$m eq $_} @{$atts{$child->name()}}) {
+			unless (grep {$m eq $_} @{$atts{$child->name()}}) 
+			#triggers if the attribute is not listed as valid for this element
+			{
 				
+				#lazily creates a p element containing attribute, gets renamed later
 				my $value = $child->att($m);
 				my $temp = XML::Twig::Elt->new('p'=>$value);
 				$temp->set_att("id"=>$m);
@@ -530,86 +571,91 @@ sub handle_term {
 			}
 		}
 		
+		#feeds children of element to back of stack to ensure full coverage
 		push @children, $child->children() if ($child->name() ne "text");
 		
 	}	 
 	
-	#now reorder the elements of the termEntry
-	
+	#reorders the elements of the termEntry
 	@children = $section->children();
 	
-	while ($child = shift @children) {
+	while ($child = shift @children) 
+	#various instances of push @children... repopulate the stack
+	{
 		
+		#stores name of child and parent for convenience
 		my $cname = $child->name();
-		
 		my $pname = $child->parent()->name();
 		
-		unless (grep{$cname eq $_} @{$comp{$pname}}) {
-			#within this bracket, only misplaced things enter
-#			print $cname,' ', $pname, ' ',$pcstorage{$pname},"\n";
+		unless (grep{$cname eq $_} @{$comp{$pname}}) 
+
+		#triggers for elements inside wrong parent
+		{
 			
-			#handle things that only contain text
-			
-			if ($cname eq "#PCDATA") {
+			if ($cname eq "#PCDATA") 
+			#if PCDATA is in an element which can't take PCDATA
+			{
+				
 				my $temp = XML::Twig::Elt->new('p'=>$child->text());
 				$temp->replace($child);
 				
 				push @children,$temp;
+				
 			}
 			
-			elsif (not $pcstorage{$cname}) {
+			elsif (not $pcstorage{$cname}) 
+			#if element is a PCDATA holder but misplaced
+			#causes some problems fixed in the 'tidy' section below...
+			{
 				
 				my $fate = $pcstorage{$pname};
 				
 				if (not $fate or $cname eq 'xref') 
 				#the current parent cannot have element children
 				#or it contains important data?
-				
-				#simple move the element up and try again
-				
+				#including xref here is a temporary fix
 				{
 					
+					#simple move the element up and try again
 					$child->move(last_child=>$child->parent()->parent());
 					
 					#return to the list
-					
 					push @children,$child;
 					
 				}
 				
 				else
-				
-				#rename it to be something that works
-				
+				#the parent can have an element which bears PCDATA, just not this one
 				{
-########					print $child->name(),' ',$fate,"\n";
+					#rename it to be something that works
 					$child->set_name($fate);
+					
+					#This code mistakenly mislables DCA data
+					#In current version, these problems are fixed in 'tidy' section'
 					
 				}
 				
-			}
-			
-			#handle other term elements                 
+			}               
 			                                            
-			else {                                      
+			else 
+			#triggers for all other termEntry children
+			{                                      
 				                                        
-				if ($cname eq 'tig' and not @langSet) {                  #
+				if ($cname eq 'tig' and not @langSet) 
+				#puts orphaned tig in new langSet if no langSet exists
+				{                  
 					
-					#unless (@langSet) {
 						my $new = XML::Twig::Elt->new('langSet');
 						$new->paste(first_child=>$section);
 						store($new);
 						$child->move($new);
 						push @children,$new;
-						#}
 					
 				} 
 				
+				else
 				#at this point, the item is either langSet, transacGrp or descripGrp
 				#or it is a tig but langset exists
-				
-				else
-				
 				{
 					
 					#does a simple search to find the nearest related element 
@@ -644,36 +690,41 @@ sub handle_term {
 	}
 	
 	#tidy termEntry
-	
 	@children = $section->children();
 	
-	while ($child = shift @children) {
+	while ($child = shift @children) 
+	#cycles through all children of termEntry again to double-check validity
+	{
 			
 		my $cname = $child->name();
 		
 		#for the time being, we will just handle things on
 		#a case by case basis.
 		
-		#descrip level, to be handled in addition to the exclusive cases below
-		
+		#makes sure DCA in a descrip element is at correct level
 		if ($cname eq 'descrip') {
 			
 			my $type = $child->att('type');
 			
 			if (grep{$type eq $_} keys %levels) {
 				
-				#move descrip with its parent
-				
-				my $head = $child->parent()->name() eq 'descripGrp' ? $child->parent() : $child;
+				#moves relative to $head, which is either the 
+				#descrip or the descripGrp it may be in
+				my $head = 
+				$child->parent()->name() eq 'descripGrp' ?
+				$child->parent() : $child;
 				
 				my $pname = $head->parent()->name();
 				
-				unless (grep{$pname eq $_} @{$levels{$type}}) {
-					print $pname,"\n";
-					print $type,"\n";
-					if ($head->parent()->parent()->name() eq $levels{$type}[0]) {
+				unless (grep{$pname eq $_} @{$levels{$type}}) 
+				#unless the parent is the correct parent for this data type
+				{
+
+					if ($head->parent()->parent()->name() eq $levels{$type}[0]) 
+					#move to the grandparent if that is the right place
+					{
 						$head->move(first_child=>$head->parent()->parent());
-					} #not sure why this isn't getting removed down below...
+					} 
 					
 				}
 				
@@ -681,9 +732,11 @@ sub handle_term {
 			
 		}
 		
-		#a large list of exclusive cases
+		#a large list of mutually exclusive cases
 		
-		if ($cname eq 'descripGrp') {
+		if ($cname eq 'descripGrp') 
+		#delete empty descripGrp or ones with only 'admin' elements
+		{
 			
 			#erase() leaves children in their parent's place.
 			#any orphaned admin element raise a level.
@@ -694,21 +747,26 @@ sub handle_term {
 		
 		#the following code bracket is a hacky fix 
 		#to the hacky way I am enforcing constraints right now
-		
+		#previous code changes many DCA elements to 'admin' instead of moving them
+		#so this has to...change them back, sort of. It works for now.
 		{
 			my $type = $child->att('type');
 			my $pname = $child->parent()->name();
-			unless ('customerSubset projectSubset source'=~/$type/) {
-				if (grep {$concomp{$type} eq $_} @{$comp{$pname}}) {
-#					print $type,' ',$concomp{$type},' ',$pname,"\n";
+			unless ('customerSubset projectSubset source'=~/$type/) 
+			#triggers if the data type is not right for an admin element
+			{
+				if (grep {$concomp{$type} eq $_} @{$comp{$pname}}) 
+				#renames if the right element for that type fits in the parent
+				{
 					$child->set_name($concomp{$type});
 					$cname=$concomp{$type};
 					push @children, $child->parent();
 				}
 				else
+				#dumps the data in place in a valid form
 				{
 					if ($pname eq 'descripGrp') 
-					
+					#makes a context descrip in a descripGrp
 					{
 						
 						my $elt =
@@ -721,7 +779,7 @@ sub handle_term {
 					}
 					
 					else
-					
+					#makes a note in any other element
 					{
 						
 						my $elt =
@@ -738,14 +796,14 @@ sub handle_term {
 		}
 		
 		elsif ($cname eq 'tig')
-		
+		#puts tig in right place and sorts children
 		{
 			
 			$child->move(last_child=>$child->parent());
 			
 			$child->
 				sort_children( 
-				sub {#print $_[0]->name(),"\n";
+				sub {
 					return 2 if $_[0]->name() eq 'term';
 				return 1 if $_[0]->name() eq 'termNote'}, 
 				type => 'numeric', order => 'reverse');
@@ -753,22 +811,24 @@ sub handle_term {
 			
 		}
 		
-		elsif ($cname eq 'langSet') {
+		elsif ($cname eq 'langSet') 
+		#makes lang lower case, probably unnecessary
+		{
 			
 			$child->move(last_child=>$child->parent());
-			#my $lang = defined $child->att('xml:lang') ? $child->att('xml:lang') : "EN";
+			
 			my $lang =$child->att('xml:lang');
-#			print $lang,"\n";
+
 			if ($lang ne lc $lang) {
-			#if (undef $child->att('xml:lang') or $lang ne lc $lang) {
 			
 				$child->set_att('xml:lang'=>lc $lang);
+			
 			}
 			
 		}
 		
 		elsif ($cname eq 'trasnacGrp') 
-		
+		#sorts children of transancGrp
 		{
 			$child->
 				sort_children( 
@@ -776,8 +836,10 @@ sub handle_term {
 				type => 'numeric', order => 'reverse');
 		}
 		
-		elsif ($cname eq 'xref') {
-			#print "xref\n";
+		elsif ($cname eq 'xref') 
+		#makes a temporary target, not finalized
+		{
+			
 			unless ($child->att('target'))
 			
 			{
@@ -785,13 +847,14 @@ sub handle_term {
 			}
 		}
 		
-		#this one is just hard coded for now
-		
-		elsif ($cname eq 'transac') {
-			#cheap perl 'in' clone, has its issues
+		elsif ($cname eq 'transac') 
+		#makes sure the text of 'transac' is valid
+		{
+			
 			my $text = $child->text();
+			
 			unless ('origination modification' =~ /$text/) {
-				#print similarity ($text,'origination'),' ',similarity ($text,'modification'),'\n';
+				
 				$child->set_text(
 				similarity ($text,'origination')>=similarity ($text,'modification') ?
 				'origination':'modification');
@@ -800,38 +863,54 @@ sub handle_term {
 		
 		elsif ($cname eq 'termNote') {
 			my $type = $child->att('type');
-			if (' administrativeStatus grammaticalGender partOfSpeech termType ' =~ / $type /) {
+			
+			#cheap perl clone of python 'in', it is safe because
+			#the values of $type are limited to those allowed for termNote
+			if (' administrativeStatus grammaticalGender partOfSpeech termType '
+			 		=~ / $type /) 
+					
+			{
 				
 				my $text = $child->text();
-				#print "$type $text hi ";
+				
 				unless (grep{$text eq $_} @{$picklist{$type}}) {
 				
-					#store the invalid value in a note, which also can go in a tig
+					#store original invalid value in a note, also valid in tig
 					my $note_text = 'original '.$type.':'.$text;
 					my $elt = XML::Twig::Elt->new('note'=>$note_text);
 					$elt->paste(last_child => $child->parent());
 					
+					#replaces invalid value with closest match
 					my %relevance = map {$_ => similarity $text,$_} @{$picklist{$type}};
 	
-					my @j = (reverse sort {$relevance{$a} <=> $relevance{$b}} keys %relevance);
+					my @j = 
+					(reverse sort {$relevance{$a} <=> $relevance{$b}} keys %relevance);
 	
 					my $guess = $j[0];
-					
-					#if ($relevance{$guess}>$tolerance) {
-					#	$child->set_text($guess);
-					#} else {
-					#	$child->set_text($guess);
-					#}
-					if ('grammaticalGender partOfSpeech' =~ /$type/ and $relevance{$guess}<$tolerance) {
+
+					if ('grammaticalGender partOfSpeech' =~ /$type/ and
+					$relevance{$guess}<$tolerance) 
+					#sets value as 'other' if possible and the match was poor
+					{
 						$child->set_text('other');
-					} else {
+					} 
+					
+					else 
+					#otherwise forces closest match
+					{
 						$child->set_text($guess);
 					}
 					
 				}
 				
-				#print "\n";
 			}
+			#does nothing if the type is something else, those have unrestricted values
+		}
+		
+		elsif ($cname eq 'date') {
+			#removes h-m-s timestamp from time, leaving only date
+			$child->set_text(substr $child->text(),0,10);
+			
 		}
 		
 		push @children, $child->children();
@@ -841,68 +920,78 @@ sub handle_term {
 	}	
 	
 	$section->print($tft);
+	
+	#calls routine to clear variables used and conserve memory
 	wipe();
 	$section->delete();
+	
 	return 1;
 	
 }
 
+#checks name for auxilliary elements
 sub name_check {
-	my ($t,$section) = @_;
-	#check names
 	
-	#stores element name for validity
+	#receive arguments from parser, tree and the element
+	my ($t,$section) = @_;
+	
+	#checks names for validity
 	#attempts to fix name if no such
 	#element exists in the TBX basic format.
 	
+	#stores element name 
 	my $cname = $section->name();
 	
 	#stores parent name, parent of the root is set to 0
-	
 	my $pname = $section->level()>0 ? $section->parent()->name() : 0;
 	
-	#this is used to ensure that proper data categories are in the right kind of element
-	
-	
+	#ensure that proper data categories are in the right kind of element
 	if (my $ntype = constraint($section)) 
-	
+	#sets $ntype to proper element tag if given by constraint subroutine
 	{ 			
-#		print "|"x10,$concomp{$ntype}," ",$ntype,"\n";
+		#currently lossy
 		$section->set_att(type=>$ntype);
 		$section->set_name($concomp{$ntype});
 		$cname = $concomp{$ntype};
-		#$section->set_name($xcsname) if $cname ne $xcsname;
 		
 	}
 	
-	
-	if (grep {$cname eq $_} @{$comp{$pname}}) {
+	if (grep {$cname eq $_} @{$comp{$pname}}) 
+	#stores the item in the correct variable if valid
+	{
 		
-		#stores the item in the correct variable if valid and not duplicate
 		
-		if (store($section)) {
+		if (store($section)) 
+		#returns to handle_aux if the element was accepted by store
+		{
 			
 			return "valid";
 			
 		}
 		
 	}
-##	print "7"x7,$cname,"\n";
+	
+	#the original closest match finder, cloned elsewhere in steamroller
+	
+	#creates hash of valid names by relevance to current name
 	my %relevance = map {$_ => similarity $cname,$_} keys %refs;
 	
+	#makes list sorted by validity
 	my @j = (reverse sort {$relevance{$a} <=> $relevance{$b}} keys %relevance);
 	
-	foreach my $guess (@j) {
+	foreach my $guess (@j) 
+	#goes through guesses from best to worst
+	{
 		
-		#check if guess is worth listening to
-		#print $guess.' '.$relevance{$guess}.' ';
-		if ($relevance{$guess}>$tolerance) {
+		if ($relevance{$guess}>$tolerance) 
+		#returns only if close enough above tolerance level
+		{
 			
 			$section->set_name($guess);
 			
+			if (store($section)) 
 			#attempts to store, skips if a unique element is repeated
-			
-			if (store($section)) {
+			{
 				
 				return $guess;
 				
@@ -913,21 +1002,20 @@ sub name_check {
 	}
 	
 	#if the guess was not able to be stored, revert name to original 
-	
 	$section->set_name($cname);
 	
 	#return failure flag to caller
-	
 	return 0;
 	
 }
 
+#called by parser on all elements outside termEntry
 sub handle_aux {
 	
+	#receive arguments from parser, tree and the element
 	my ($t,$section) = @_;
 	
-	#calls name_check with backup code if no valid name can be assigned
-	
+	#calls name_check with backup code for if no valid name can be assigned
 	unless (name_check(@_)) {
 		
 		#create id to preserve original name
@@ -949,13 +1037,16 @@ sub handle_aux {
 		store($section);
 	}
 	
+	#check attributes
 	foreach my $m ($section->att_names()) {
 		
-		unless (grep {$m eq $_} @{$atts{$section->name()}}) {
+		unless (grep {$m eq $_} @{$atts{$section->name()}}) 
+		#if the attribute is not allowed, store it as a child to original
+		{
 			
 			my $value = $section->att($m);
 			my $temp = XML::Twig::Elt->new('p'=>$m.":".$value);
-			#$temp->set_att("id"=>$m);
+
 			$temp->paste(last_child=>$section);
 			store($temp);
 			$section->del_att($m);
@@ -966,11 +1057,13 @@ sub handle_aux {
 	
 }
 
+# called on root to sort entire tree
 sub location_control {
 	
-	#don't forget to name and att check root
+	#name and att check root
 	handle_aux(@_);
 	
+	#receive arguments from parser, tree and the element
 	my ($t,$section) = @_;
 	
 	#insert a brand mark
@@ -987,7 +1080,8 @@ sub location_control {
 		
 	}
 	
-	#insert a placeholder
+	#insert a placeholder for termEntries
+	#tells steamroller that placeholder belongs in 'body' element
 	push $comp{'body'}, 'placeholder';
 	$placeholder=XML::Twig::Elt->new('placeholder');
 	
@@ -1004,15 +1098,22 @@ sub location_control {
 		$martif = $section;
 	} 
 	
-	#
-	if ($root_name ne "martif") {
+	if ($root_name ne "martif") 
+	#if martif is not root
+	{
 		
-		#retrieves martif if deep in doc, otherwise makes one
-		if (defined $martif) {
+		
+		if (defined $martif) 
+		#retrieves martif if deep in doc
+		{
 			
 			$martif->cut();
 			
-		} else {
+		} 
+		
+		else 
+		# otherwise makes one
+		{
 			
 			$martif = XML::Twig::Elt->new('martif');
 			
@@ -1030,11 +1131,15 @@ sub location_control {
 	my @children = $section->children();
 	my $child;
 	
-	while ($child = shift @children) {
+	while ($child = shift @children) 
+	#reads children one at a time from stack
+	{
 		
 		my $cname = $child->name();
 		
-		if ($cname eq "termEntry") {
+		if ($cname eq "termEntry") 
+		#passes missed, misnamed or misplaced termEntries to handler
+		{
 			
 			handle_term($t,$child);
 			
@@ -1048,11 +1153,15 @@ sub location_control {
 		
 		#checks to see if the element is in the right place
 		
-		unless (grep{$cname eq $_} @{$comp{$pname}}) {
+		unless (grep{$cname eq $_} @{$comp{$pname}})
+		#if child cannot belong to its parent
+		{
 			
-			#package PCDATA in p element.
 			
-			if ($cname eq "#PCDATA") {
+			
+			if ($cname eq "#PCDATA") 
+			#if PCDATA is out of place, package in p element
+			{
 				
 				my $new = XML::Twig::Elt->new('p');
 			
@@ -1066,7 +1175,9 @@ sub location_control {
 				
 			}
 			
-			elsif ($cname eq "p") {
+			elsif ($cname eq "p") 
+			#appropriately rename p element within certain elements
+			{
 				if ($pname eq 'revisionDesc') {
 					$child->set_name('change');
 				} 
@@ -1079,7 +1190,9 @@ sub location_control {
 				#it must be in fileDesc or above.  The next blocks of code 
 				#construct appropriate parents and move p to fit.
 			
-				elsif ($pname eq 'fileDesc') {
+				elsif ($pname eq 'fileDesc') 
+				#create a scourceDesc for it if in fileDesc
+				{
 					my $new = XML::Twig::Elt->new('sourceDesc');
 				
 					$new->paste(last_child => $child->parent());
@@ -1087,15 +1200,23 @@ sub location_control {
 					$child->move($new);
 				} 
 			
-				elsif ($pname eq 'martifHeader') {
+				elsif ($pname eq 'martifHeader') 
+				#move it to the fileDesc 
+				{
 									
-					if (defined $fileDesc) {
+					if (defined $fileDesc) 
+					
+					{
 					
 						$child->move($fileDesc);
-						
+						#and process again on next past
 						push @children,$child;
 						
-					} else {
+					} 
+					
+					else 
+					#or make one if none exists
+					{
 						
 						$new = XML::Twig::Elt->new('fileDesc');
 						$new->paste(first_child=>$martifHeader);
@@ -1123,9 +1244,9 @@ sub location_control {
 					}
 				} 
 			
+				else 
 				#in unhandled cases, move p upwards!
-			
-				else {
+				{
 					
 					$child->move($child->parent()->parent());
 					push @children,$child;
@@ -1134,35 +1255,40 @@ sub location_control {
 				store($child);
 			}
 			
-			else {
-				
+			else 
+			#if element is not PCDATA or p element
+			{
+				#get valid parent from hash
 				$dest = $renp{$cname};
-
-				#check for proper parent and move there
 				
-				if (ref($dest) eq 'ARRAY') {
+				#check for proper parent and move there
+				if (ref($dest) eq 'ARRAY') 
+				#this takes advantage of the fact that only termEntry
+				#elements have arrays in the renp hash.  #a later 
+				#steamroller needs to overhaul this whole system
+				{
+					
+					#put into a new termEntry for storage
 					$new = XML::Twig::Elt->new('termEntry');
 					$child->move(first_child=>$new);
 					handle_term($t,$new);
 					next; 
-					
-					#this takes advantage of the fact that only termEntry
-					#elements have arrays in the renp hash.  #a later 
-					#steamroller needs to overhaul this whole system
+
 				}
-				
-				elsif (defined ${$refs{$dest}}) {
+			
+				elsif (defined ${$refs{$dest}}) 
+				#puts in proper parent if it exists
+				{
 					$child->cut();
 					$child->paste(last_child => ${$refs{$dest}});
 					
 				} 
 				
+				else 
 				#create proper parent and stuff it in the martif
 				#then put it back on the stack; it will be processed
-				#in turn and moved to the correct place.
-				
-				else {
-#					
+				#in next pass and moved to the correct place.
+				{					
 					
 					$new = XML::Twig::Elt->new($dest);
 					store($new);
@@ -1173,8 +1299,6 @@ sub location_control {
 				}
 				
 			}
-			
-			push @children, $child->children() if ($child->name() ne "text"); 
 			
 		}
 		
@@ -1190,17 +1314,16 @@ sub location_control {
 	#unless the XCSURI is defined, we will define it.
 	
 	{
-		#my $elt= XML::Twig::Elt->new(encodingDesc => { p => 'TBXBasicXCSV02.xcs' });
-		#$elt->paste($martifHeader);
-		if (defined $encodingDesc) 
 		
+		if (defined $encodingDesc) 
+		#put in existing encodingDesc
 		{
-			my $elt = XML::Twig::Elt->new(p=>{type=>'XCSURI'});
+			my $elt = XML::Twig::Elt->new(p=>{type=>'XCSURI'},'TBXBasicXCSV02.xcs');
 			$elt->paste($encodingDesc);
 		}
 		
 		else
-		
+		#or make it
 		{
 			$encodingDesc=XML::Twig::Elt->new('encodingDesc');
 			$encodingDesc->paste($martifHeader);
@@ -1210,10 +1333,10 @@ sub location_control {
 		
 	}
 	
-	#foreach my $c (keys %comp) {
-	foreach my $c (@aux_items) {
-		#condition to filter out elements with single children, and ignore undefined
-		#also ignores the body since all termEntry have been removed
+	foreach my $c (@aux_items) 
+	#condition to filter out elements with single children, and ignore undefined
+	#also ignores the body since all termEntry have been removed
+	{
 		
 		if ($#{$comp{$c}}>0 and $c ne 'body') {
 		
@@ -1224,10 +1347,15 @@ sub location_control {
 				#in order listed in comp, which is preferred order,
 				#put the element last——resulting in the correct order.
 			
-				if (ref($ref) eq 'REF') {
-#					print "Pasting " . ${$ref}->name();
+				if (ref($ref) eq 'REF') 
+				#reorder unique elements
+				{
 					${$ref}->move(last_child=>${$ref}->parent());
-				} elsif (ref($ref) eq 'ARRAY') {
+				}
+				
+				elsif (ref($ref) eq 'ARRAY') 
+				#reorder repeatable elements
+				{
 					foreach my $x (@{$ref}) {
 						
 						$x->move(last_child=>$x->parent());
@@ -1237,33 +1365,29 @@ sub location_control {
 			}
 		}
 	}	
-	
-	
-	
+	#returning 1 is better for the parser
 	return 1;
 	
 }
 
 #receive file from command line
-
 my $file = $ARGV[0];
 
 #filter out non-tbx files
-
 $file or die "Please provide a file!";
 
 #TBX Steamroller accepts TBX, TBX-Min, TBX-Basic, or any XML file
 #(Malformed TBX often bears the .xml filetype)
-
 unless ($file =~ m/(tbx|xml|tbxm)\Z/ && -e $file) {
 	die $file . " is not recognized xml!";
 }
 
 #constructs the TWIG
-
 my $twig = XML::Twig->new(
 	
 pretty_print => 'indented',
+
+output_encoding =>'utf-8', #probably important
 
 twig_handlers => {
 	
@@ -1289,8 +1413,8 @@ $twig->set_id_seed('c');
 
 $twig->parsefile($file);
 
+#set correct doctype if it is wrong
 #steamroller should leave things alone unless they are wrong
-
 unless ($twig->doctype()=~/TBXBasiccoreStructV02/) 
 
 {
@@ -1301,30 +1425,41 @@ unless ($twig->doctype()=~/TBXBasiccoreStructV02/)
 
 
 
-#stores the non-termEntry data to a string; this is very short compared to termEntry data.
+#stores the parsed non-termEntry data to a string
 my $auxilliary = $twig->sprint();
 
-#close the auxilliary file and open for reading
+#close the termEntry file and open for reading
 close($tft);
 open($tft,'<','temp_file_text.txt');
 
 #open final output file
 open(my $out,">",'result.tbx');
-###print $out '<!DOCTYPE martif SYSTEM "TBXBasiccoreStructV02.dtd">'."\n";
-#finds a placeholder which marks the proper location of the termEntry, inserts all termEntry
+
+
 foreach my $line (split(/\n/,$auxilliary)) {
-	if ($line =~ /      <placeholder/) {
+	if ($line =~ /      <placeholder/) 
+	#inserts all termEntry in place of placeholder element
+	{
 		while (<$tft>) {
 			print $out "$_" if ($_ ne "\n");
 		}
 		
 	}
 	
-	else {
+	else 
+	
+	{
 		print $out $line;
 	}
+	
 	print $out "\n";
 }
 
-#plays console bell, useful for debugging; this program runs for a while on gigabyte+ files.
+#remove temp files in full version
+if ($version>1) {
+	unlink 'temp_file_text.txt';
+}
+
+#plays console bell, useful for debugging
+#this program runs for a while on gigabyte+ files.
 print "\a"x3;
