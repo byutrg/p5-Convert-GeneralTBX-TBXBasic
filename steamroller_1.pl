@@ -12,12 +12,15 @@ use String::Similarity;
 #A lower tolerance can catch more matches but may make bad guesses.
 my $tolerance = 0.4;
 
-#if $version is greater than 0.1, the steamroller will delete temporary files
+#if $version is greater than 1, the steamroller will delete temporary files
 #and add a brand marker to identify the file as a steamroller-generated file.
-my $version = 0.2;
+my $version = 1.01;
 
 #opens temporary file to store termEntry elements
 open (my $tft,'>','temp_file_text.txt'); 
+
+#opens logfile
+open (my $log,'>','steamroller_log.txt');
 
 #initialize variables which store elements as they are encountered, used later for rearrangement
 my(
@@ -509,13 +512,23 @@ sub handle_term {
 	
 	my ($t,$section) = @_;
 	
+	####
+	my $line = $t->current_line();
+	
 	#add generic incrementing id tag
-	$section->add_id() unless $section->att('id');
+	unless ($section->att('id')) {
+		$section->add_id();
+		printf $log "termEntry ending in $line lacks id, setting id to '%s'.\n",
+		$section->att('id'); 
+	};
+	my $tid = "termEntry ".$section->att('id')." ending in line $line";
 	
 	#check attributes of termEntry
 	foreach my $m ($section->att_names()) {
 		
 		unless (grep {$m eq $_} @{$atts{$section->name()}}) {
+			
+			print $log "Attribute $m invalid for termEntry, storing as a note for $tid .\n";
 			
 			#stores any invalid attributes as a note in termEntry
 			my $value = $section->att($m);
@@ -536,14 +549,17 @@ sub handle_term {
 	#takes from stack one at a time; it is repopulated during loop
 	{
 		
-		unless (name_check($t,$child)) 
+		unless (name_check($t,$child,$tid)) 
 		#triggers if name_check fails to validate or correct name, returning 0;
 		{
 			
 			#creates a dummy note containing the invalid name
 			#dumps it and the invalid elements children in place
 			
+			
+			
 			my $cname=$child->name();
+			print $log "Element $cname has invalid tag. Storing as note, $tid.\n";
 			my $temp = XML::Twig::Elt->new(note => $cname);
 			$temp->paste(last_child => $child);
 			$child->erase(); 
@@ -560,7 +576,7 @@ sub handle_term {
 			unless (grep {$m eq $_} @{$atts{$child->name()}}) 
 			#triggers if the attribute is not listed as valid for this element
 			{
-				
+				print $log "Attribute $m is invalid for ".$child->name().".  Storing as note, $tid.\n";
 				#lazily creates a p element containing attribute, gets renamed later
 				my $value = $child->att($m);
 				my $temp = XML::Twig::Elt->new('p'=>$value);
@@ -615,6 +631,9 @@ sub handle_term {
 				#or it contains important data?
 				#including xref here is a temporary fix
 				{
+					####
+					print $log "Moving $cname up to ".$child->parent()->parent()->name().
+					" in $tid.\n";
 					
 					#simple move the element up and try again
 					$child->move(last_child=>$child->parent()->parent());
@@ -627,7 +646,11 @@ sub handle_term {
 				else
 				#the parent can have an element which bears PCDATA, just not this one
 				{
+					
+					printf $log "Renaming element '%s' with text '%s' to $fate in $tid.\n",$child->name(),$child->text();
+					
 					#rename it to be something that works
+					
 					$child->set_name($fate);
 					
 					#This code mistakenly mislables DCA data
@@ -645,11 +668,14 @@ sub handle_term {
 				#puts orphaned tig in new langSet if no langSet exists
 				{                  
 					
-						my $new = XML::Twig::Elt->new('langSet');
-						$new->paste(first_child=>$section);
-						store($new);
-						$child->move($new);
-						push @children,$new;
+					####
+					print $log "Creating langSet element for tig in $tid";
+					#($child->first_child('term'))
+					my $new = XML::Twig::Elt->new('langSet');
+					$new->paste(first_child=>$section);
+					store($new);
+					$child->move($new);
+					push @children,$new;
 					
 				} 
 				
@@ -677,6 +703,7 @@ sub handle_term {
 					
 					until ((grep{$cname eq $_} @{$comp{$target->name()}}));
 					
+					print $log "Moving $cname to ".$target->name()."in $tid\n";
 					$child->move($target);
 					
 				}
@@ -723,6 +750,8 @@ sub handle_term {
 					if ($head->parent()->parent()->name() eq $levels{$type}[0]) 
 					#move to the grandparent if that is the right place
 					{
+						print $log "Moving ".$head->name()." to "
+						.$head->parent()->parent()->name()." in $tid\n";
 						$head->move(first_child=>$head->parent()->parent());
 					} 
 					
@@ -741,7 +770,10 @@ sub handle_term {
 			#erase() leaves children in their parent's place.
 			#any orphaned admin element raise a level.
 			push @children,$child->children();
-			$child->erase() unless $child->has_child('descrip');
+			unless ($child->has_child('descrip')) {
+				$child->erase();
+				printf $log "descripGrp has no descrip, deleting element and advancing children in $tid.\n"; 
+			}
 			
 		} elsif ($cname eq 'admin')
 		
@@ -758,6 +790,7 @@ sub handle_term {
 				if (grep {$concomp{$type} eq $_} @{$comp{$pname}}) 
 				#renames if the right element for that type fits in the parent
 				{
+					printf $log "Renaming DCA element with type '%s' to '%s' in $tid.\n",$type,$concomp{$type};
 					$child->set_name($concomp{$type});
 					$cname=$concomp{$type};
 					push @children, $child->parent();
@@ -798,7 +831,7 @@ sub handle_term {
 		elsif ($cname eq 'tig')
 		#puts tig in right place and sorts children
 		{
-			
+			print $log "Sorting tig in $tid.\n";
 			$child->move(last_child=>$child->parent());
 			
 			$child->
@@ -814,7 +847,7 @@ sub handle_term {
 		elsif ($cname eq 'langSet') 
 		#makes lang lower case, probably unnecessary
 		{
-			
+			print $log "Reordering langSet in $tid.\n";
 			$child->move(last_child=>$child->parent());
 			
 			my $lang =$child->att('xml:lang');
@@ -843,6 +876,7 @@ sub handle_term {
 			unless ($child->att('target'))
 			
 			{
+				printf $log "Attribute 'target' missing from xref, set to '%s', please review, in $tid.\n", $child->text();
 				$child->set_att(target => $child->text());
 			}
 		}
@@ -854,10 +888,11 @@ sub handle_term {
 			my $text = $child->text();
 			
 			unless ('origination modification' =~ /$text/) {
-				
+				printf $log "transac spec must be origination or modification, '%s' not allowed. ",$child->text();
 				$child->set_text(
 				similarity ($text,'origination')>=similarity ($text,'modification') ?
 				'origination':'modification');
+				printf $log "Setting to '%s' in $tid.\n",$child->text();
 			}
 		}
 		
@@ -877,6 +912,7 @@ sub handle_term {
 				
 					#store original invalid value in a note, also valid in tig
 					my $note_text = 'original '.$type.':'.$text;
+					
 					my $elt = XML::Twig::Elt->new('note'=>$note_text);
 					$elt->paste(last_child => $child->parent());
 					
@@ -892,12 +928,19 @@ sub handle_term {
 					$relevance{$guess}<$tolerance) 
 					#sets value as 'other' if possible and the match was poor
 					{
+						
+						print $log "Value '$text' invalid for element ".$child->name().". ".
+						"Storing as note, replacing with 'other', $tid.\n";
+						
 						$child->set_text('other');
 					} 
 					
 					else 
 					#otherwise forces closest match
 					{
+						print $log "Value '$text' invalid for element ".$child->name().". ".
+						"Storing as note, replacing with '$guess', $tid.\n";
+						
 						$child->set_text($guess);
 					}
 					
@@ -908,8 +951,15 @@ sub handle_term {
 		}
 		
 		elsif ($cname eq 'date') {
-			#removes h-m-s timestamp from time, leaving only date
-			$child->set_text(substr $child->text(),0,10);
+			
+			unless ($child->text =~ /....-..-..$/) {
+				#removes h-m-s timestamp from time, leaving only date
+				printf $log "Date format is YYYY-MM-DD, '%s' not allowed, ",$child->text();
+				
+				$child->set_text(substr $child->text(),0,10);
+				
+				printf $log "changing to '%s' in $tid.\n",$child->text();
+			}
 			
 		}
 		
@@ -933,7 +983,7 @@ sub handle_term {
 sub name_check {
 	
 	#receive arguments from parser, tree and the element
-	my ($t,$section) = @_;
+	my ($t,$section,$line) = @_;
 	
 	#checks names for validity
 	#attempts to fix name if no such
@@ -950,6 +1000,9 @@ sub name_check {
 	#sets $ntype to proper element tag if given by constraint subroutine
 	{ 			
 		#currently lossy
+		
+		printf $log "Data category '%s' cannot go in element '%s', changing att to '%s' and tag to '%s' in %s.\n",
+		$section->att('type'),$section->name(),$ntype,$concomp{$ntype},$line;
 		$section->set_att(type=>$ntype);
 		$section->set_name($concomp{$ntype});
 		$cname = $concomp{$ntype};
@@ -992,7 +1045,9 @@ sub name_check {
 			if (store($section)) 
 			#attempts to store, skips if a unique element is repeated
 			{
-				
+		
+				printf $log "Element %s has invalid name, renaming '%s' in $line.\n",
+				$cname, $guess;
 				return $guess;
 				
 			}
@@ -1015,11 +1070,14 @@ sub handle_aux {
 	#receive arguments from parser, tree and the element
 	my ($t,$section) = @_;
 	
+	####
+	my $line= sprintf("element '%s' ending in line %d",$section->name(),$t->current_line());
+	
 	#calls name_check with backup code for if no valid name can be assigned
-	unless (name_check(@_)) {
+	unless (name_check(@_,$line)) {
 		
 		#create id to preserve original name
-		
+		printf $log "Storing unrecognized $line in sourceDesc.\n";
 		#if there is an id tag, which is allowed by most elements
 		my $id = $section->att("id") ? 
 		
@@ -1046,7 +1104,9 @@ sub handle_aux {
 			
 			my $value = $section->att($m);
 			my $temp = XML::Twig::Elt->new('p'=>$m.":".$value);
-
+			
+			print $log "Attribute $m is invalid for ".$section->name().".  Storing as a note.\n";
+			
 			$temp->paste(last_child=>$section);
 			store($temp);
 			$section->del_att($m);
@@ -1094,6 +1154,7 @@ sub location_control {
 	
 	#spotcheck for tbxm files with root tbx
 	if ($root_name eq "tbx") {
+		printf $log "root name 'tbx' invalid for TBX-Basic, changing to 'martif.'\n";
 		$section->set_name("martif");
 		$martif = $section;
 	} 
@@ -1106,7 +1167,8 @@ sub location_control {
 		if (defined $martif) 
 		#retrieves martif if deep in doc
 		{
-			
+			####
+			print $log "Misplaced martif, moving to root.\n";
 			$martif->cut();
 			
 		} 
@@ -1115,11 +1177,15 @@ sub location_control {
 		# otherwise makes one
 		{
 			
+			####
+			print $log "Missing martif, creating and moving to root.\n";
+			
 			$martif = XML::Twig::Elt->new('martif');
 			
 		}
 		
 		#roots martif, reorders.
+		
 		$section->cut();
 		$t->set_root($martif);
 		$section->paste($martif);
@@ -1168,7 +1234,7 @@ sub location_control {
 				$new->paste(last_child => $child->parent());
 			
 				#puts the new element on the stack for further processing
-			
+				print $log "Moving data ".$child->text()." into p element.\n";
 				$child->cut();
 				$child->paste($new);
 				push @children,$child,$new;
@@ -1179,10 +1245,12 @@ sub location_control {
 			#appropriately rename p element within certain elements
 			{
 				if ($pname eq 'revisionDesc') {
+					printf $log "Element p cannot exist in revisionDesc, changing to 'change'. \n";
 					$child->set_name('change');
 				} 
 			
 				elsif ($pname eq 'titleStmt') {
+					printf $log "Element p cannot exist in titleStmt, changing to 'note'. \n";
 					$child->set_name('note');
 				} 
 			
@@ -1197,6 +1265,10 @@ sub location_control {
 				
 					$new->paste(last_child => $child->parent());
 					store($new);
+					
+					print $log "Housing p with text '".$child->text().
+					"' in new sourceDesc in fileDesc.\n";
+					
 					$child->move($new);
 				} 
 			
@@ -1207,7 +1279,8 @@ sub location_control {
 					if (defined $fileDesc) 
 					
 					{
-					
+						print $log "Moving p with text '".$child->text().
+						"' to fileDesc.\n";
 						$child->move($fileDesc);
 						#and process again on next past
 						push @children,$child;
@@ -1217,7 +1290,9 @@ sub location_control {
 					else 
 					#or make one if none exists
 					{
-						
+						print $log "fileDesc missing.\n".
+						"Moving p with text '".$child->text().
+						"' to new fileDesc.\n";
 						$new = XML::Twig::Elt->new('fileDesc');
 						$new->paste(first_child=>$martifHeader);
 						store($new);
@@ -1233,9 +1308,18 @@ sub location_control {
 				elsif ($pname eq 'martif') {
 					
 					if (defined $martifHeader) {
+						
+						print $log "Moving p with text '".$child->text().
+						"' to martifHeader.\n";
+						
 						$child->move($martifHeader);
 						push @children,$child;
 					} else {
+						
+						print $log "martifHeader missing.\n".
+						"Moving p with text '".$child->text().
+						"' to new martifHeader.\n";
+						
 						$new = XML::Twig::Elt->new('martifHeader');
 						$new->paste(first_child=>$martif);
 						store($new);
@@ -1247,7 +1331,8 @@ sub location_control {
 				else 
 				#in unhandled cases, move p upwards!
 				{
-					
+					print $log "Moving ".$child->name. " to ".
+					$child->parent()->parent()->name()."\n";
 					$child->move($child->parent()->parent());
 					push @children,$child;
 				}
@@ -1267,7 +1352,7 @@ sub location_control {
 				#elements have arrays in the renp hash.  #a later 
 				#steamroller needs to overhaul this whole system
 				{
-					
+					print $log "Moving $cname to a new termEntry.\n";
 					#put into a new termEntry for storage
 					$new = XML::Twig::Elt->new('termEntry');
 					$child->move(first_child=>$new);
@@ -1279,6 +1364,9 @@ sub location_control {
 				elsif (defined ${$refs{$dest}}) 
 				#puts in proper parent if it exists
 				{
+					####
+					print $log "Moving element $cname to $dest\n";
+					
 					$child->cut();
 					$child->paste(last_child => ${$refs{$dest}});
 					
@@ -1289,7 +1377,7 @@ sub location_control {
 				#then put it back on the stack; it will be processed
 				#in next pass and moved to the correct place.
 				{					
-					
+					print $log "Moving $cname to new $dest.\n";
 					$new = XML::Twig::Elt->new($dest);
 					store($new);
 					$new->paste(last_child=>$martif);
@@ -1314,7 +1402,7 @@ sub location_control {
 	#unless the XCSURI is defined, we will define it.
 	
 	{
-		
+		print $log "Setting XCSURI to TBXBASICXCSV02.xcs\n";
 		if (defined $encodingDesc) 
 		#put in existing encodingDesc
 		{
@@ -1349,7 +1437,7 @@ sub location_control {
 			
 				if (ref($ref) eq 'REF') 
 				#reorder unique elements
-				{
+				{					
 					${$ref}->move(last_child=>${$ref}->parent());
 				}
 				
@@ -1418,7 +1506,7 @@ $twig->parsefile($file);
 unless ($twig->doctype()=~/TBXBasiccoreStructV02/) 
 
 {
-	
+	printf $log "Setting doctype declaration to TBXBasiccoreStructV02.dtd.\n";
 	$twig->set_doctype('martif',"TBXBasiccoreStructV02.dtd");
 	
 }
@@ -1428,19 +1516,25 @@ unless ($twig->doctype()=~/TBXBasiccoreStructV02/)
 #stores the parsed non-termEntry data to a string
 my $auxilliary = $twig->sprint();
 
+#fix a weird glitch with XML::Twig
+$auxilliary =~ s/><!/>\n<!/g;
+
 #close the termEntry file and open for reading
 close($tft);
 open($tft,'<','temp_file_text.txt');
 
 #open final output file
-open(my $out,">",'result.tbx');
-
+my $out_name = $ARGV[0];
+$out_name =~ s/(.+?)\..+/$1_steamroller.tbx/;
+open(my $out,">",$out_name);
 
 foreach my $line (split(/\n/,$auxilliary)) {
 	if ($line =~ /      <placeholder/) 
 	#inserts all termEntry in place of placeholder element
 	{
-		while (<$tft>) {
+		while (<$tft>) 
+		
+		{
 			print $out "$_" if ($_ ne "\n");
 		}
 		
