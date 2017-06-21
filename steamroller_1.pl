@@ -1556,4 +1556,4 @@ if ($version>1) {
 
 #plays console bell, useful for debugging
 #this program runs for a while on gigabyte+ files.
-print "\a"x3;
+#print "\a"x3;
