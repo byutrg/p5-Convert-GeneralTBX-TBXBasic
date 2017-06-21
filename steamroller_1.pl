@@ -1525,7 +1525,7 @@ open($tft,'<','temp_file_text.txt');
 #open final output file
 my $out_name = $file;
 $out_name =~ s/(.+?)\..+/$1_steamroller.tbx/;
-$out_name = 'result.txt' if $version<1;
+$out_name = 'result.tbx' if $version<1;
 open(my $out, ">:encoding(UTF-8)",$out_name);
 
 foreach my $line (split(/\n/,$auxilliary)) {
