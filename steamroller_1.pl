@@ -16,6 +16,7 @@ my $tolerance = 0.4;
 #and add a brand marker to identify the file as a steamroller-generated file.
 my $version = 1.01;
 
+my $file;
 #opens temporary file to store termEntry elements
 open (my $tft,'>','temp_file_text.txt'); 
 
@@ -1130,7 +1131,7 @@ sub location_control {
 	if ($version>=1) {
 		my $signature=XML::Twig::Elt->new('sourceDesc');
 		my $signature_p=XML::Twig::Elt->new(
-			'p'=>"Processed by Steamroller V.$version from $ARGV[0]."
+			'p'=>"Processed by Steamroller V.$version from $file."
 		);
 
 		#pastes this to the root, it will be sorted eventually
@@ -1458,17 +1459,15 @@ sub location_control {
 	
 }
 
-#receive file from command line
-my $file = $ARGV[0];
-
-#filter out non-tbx files
-$file or die "Please provide a file!";
-
-#TBX Steamroller accepts TBX, TBX-Min, TBX-Basic, or any XML file
-#(Malformed TBX often bears the .xml filetype)
-unless ($file =~ m/(tbx|xml|tbxm)\Z/ && -e $file) {
-	die $file . " is not recognized xml!";
+$file = $ARGV[0];
+until ($file && $file =~ m/(tbx|xml|tbxm)\Z/ && -e $file) {
+	print "Please enter a valid tbx file:\n";
+	$file = <STDIN>;
+	chomp $file;
 }
+
+
+
 
 #constructs the TWIG
 my $twig = XML::Twig->new(
@@ -1524,9 +1523,9 @@ close($tft);
 open($tft,'<','temp_file_text.txt');
 
 #open final output file
-my $out_name = $ARGV[0];
+my $out_name = $file;
 $out_name =~ s/(.+?)\..+/$1_steamroller.tbx/;
-open(my $out,">",$out_name);
+open(my $out, ">:encoding(UTF-8)",$out_name);
 
 foreach my $line (split(/\n/,$auxilliary)) {
 	if ($line =~ /      <placeholder/) 
@@ -1552,8 +1551,9 @@ foreach my $line (split(/\n/,$auxilliary)) {
 #remove temp files in full version
 if ($version>1) {
 	unlink 'temp_file_text.txt';
+	print "Printed to $out_name.\n";
 }
 
 #plays console bell, useful for debugging
 #this program runs for a while on gigabyte+ files.
-#print "\a"x3;
+print "\a"x3;
