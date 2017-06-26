@@ -1,0 +1,32 @@
+handle_aux
+
+name_check
+	ensure that DCA original name+tag is retained for log and notation
+	DCA check
+	don't change names is a move is at all possible
+
+att_check
+	DCA check
+	yeah lets just not be lazy with <p> elements
+
+order_check
+	term made into note, bad: instead, more robust fate hash?
+	PCDATA content check for DCA, date here (after all is ordered)
+	hash to enforce minimal structure
+	home-finding algorithm
+
+handle_term
+	during term order check, check/generate backmatter.
+
+handle_root
+
+similarity 
+	make a seperate function -> greater ease in implementing user input
+	
+modes, flags and options
+
+logger
+	magical smart hash or something
+	parser pre-function to check internal id
+	
+catch and handle errors!
