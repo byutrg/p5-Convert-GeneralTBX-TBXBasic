@@ -12,8 +12,11 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $tolerance = 0.9;
 
-#version 2.02 converts the log printer into a function
-my $version = 2.02;
+#version 2.03 implements termEntry seperation
+my $version = 2.03;
+
+#changes behaviour if true, used for coding purposes
+my $dev = 1;
 
 #initialize file;
 my $file;
@@ -26,18 +29,6 @@ open (my $log,'>','log_steamroller.txt');
 
 my %aux_log;
 my %term_log;
-
-sub aux_log_init {
-	my ($t,$section) = @_;
-	#passes reference for %aux_log to &log_init
-	log_init($t,$section,\%aux_log);
-}
-
-sub term_log_init {
-	my ($t,$section) = @_;
-	#passes reference for %term_log to &log_init
-	log_init($t,$section,\%term_log);
-}
 
 sub log_init {
 	my ($t,$section,$log) = @_;
@@ -65,15 +56,66 @@ sub log_init {
 	
 }
 
-sub test_all {
+sub term_log_init {
+	my ($t,$section) = @_;
+	#passes reference for %term_log to &log_init
+	log_init($t,$section,\%term_log);
+	
+	return 1;
+}
+
+sub handle_term {
+	my ($t,$section) = @_;
+	
+	$term_log{$section}{'text'}=$section->children_text('#PCDATA');
+	$term_log{$section}{'text'} =~ s/\s+/ /g;
+#	print $section->name(), ' ',$t->current_line()," $test_counter","\n"x1;
+	
+	$test_counter++;
+	
+	return 1;
+}
+
+sub order_term {
+	my ($t,$section) = @_;
+	
+	handle_term(@_);
+	
+	#print the log for term entries
+	print_log(%term_log);
+	
+	#clear log and memory
+	%term_log=();
+	$section->print($tft);
+	$section->delete();
+	#wipe(); #activate when we start actually doing crap with these
+	return 1;
+}
+
+sub aux_log_init {
+	my ($t,$section) = @_;
+	#passes reference for %aux_log to &log_init
+	log_init($t,$section,\%aux_log);
+	
+	return 1;
+}
+
+sub handle_aux {
 	my ($t,$section) = @_;
 	
 	$aux_log{$section}{'text'}=$section->children_text('#PCDATA');
 	$aux_log{$section}{'text'} =~ s/\s+/ /g;
-	print $section->name(), ' ',$t->current_line()," $test_counter","\n"x1;
+#	print $section->name(), ' ',$t->current_line()," $test_counter","\n"x1;
 	
 	$test_counter++;
 	
+	return 1;
+}
+
+sub order_root {
+	my ($t,$section) = @_;
+	
+	handle_aux(@_);
 	return 1;
 }
 
@@ -123,7 +165,11 @@ output_encoding 	=> 'utf-8',
 
 start_tag_handlers 	=> {
 	
-	_all_ 				=> \&aux_log_init,
+	"termEntry"			=> \&term_log_init,
+	
+	"termEntry//*" 		=> \&term_log_init,
+	
+	_default_ 			=> \&aux_log_init,
 	
 },
 
@@ -131,7 +177,13 @@ twig_handlers 		=> {
 	
 	output_html_doctype =>1,
 	
-	_default_ 			=> \&test_all,
+	"termEntry//*"		=> \&handle_term,
+	
+	"termEntry"			=> \&order_term,
+	
+	_default_ 			=> \&handle_aux,
+	
+	"/*" 				=> \&order_root,
 	
 }
 	
@@ -142,5 +194,42 @@ $twig->parsefile($file);
 #print logfile sorted by linenumber of original
 print_log(%aux_log);
 
-$twig->purge();
+my $auxilliary = $twig->sprint();
 
+close($tft);
+open($tft,'<','temp_file_text.txt');
+
+my $out_name = $file;
+$out_name =~ s/(.+?)\..+/$1_steamroller.tbx/;
+$out_name = 'result.tbx' if $dev;
+
+open(my $out, ">:encoding(UTF-8)",$out_name);
+
+foreach my $line (split(/\n/,$auxilliary)) {
+	if ($line =~ m!<body></body>!) 
+	
+	#this gross code will be nicer when placeholder is back
+	
+	{
+		
+		$line =~ s!</body>!!;
+		print $out $line,"\n";
+		
+		while (<$tft>) 
+		{
+			print $out "$_" if ($_ ne "\n");
+		}
+		
+		$line =~ s!<body>!</body>!;
+		print $out "\n",$line;
+		
+	}
+	
+	else 
+	
+	{
+		print $out $line;
+	}
+	
+	print $out "\n";
+}
