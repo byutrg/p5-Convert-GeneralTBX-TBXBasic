@@ -12,8 +12,8 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $tolerance = 0.9;
 
-#version 2.03 implements termEntry seperation
-my $version = 2.03;
+#version 2.10 implements namechecking and logging
+my $version = 2.10;
 
 #changes behaviour if true, used for coding purposes
 my $dev = 1;
@@ -25,10 +25,178 @@ my $test_counter=0;
 
 #open termEntry and log files
 open (my $tft,'>','temp_file_text.txt');
-open (my $log,'>','log_steamroller.txt');
+open (my $lf,'>','log_steamroller.txt');
 
 my %aux_log;
 my %term_log;
+
+#initialize variables which store elements as they are encountered, used later for rearrangement
+my(
+$martif,
+$martifHeader,
+$fileDesc,
+@p,
+$titleStmt,
+$title,
+@note,
+$publicationStmt,
+@sourceDesc,
+$encodingDesc,
+$revisionDesc,
+@change,
+@pcdata,
+$text,
+$body,
+$back,
+@refObjectList,
+@refObject,
+@item,
+$placeholder,
+@termEntry,
+@langSet,
+@tig,
+@term,
+@termNote,
+@descrip,
+@descripGrp,
+@admin,
+@transacGrp,
+@ref,
+@xref,
+@transac,
+@transacNote,
+@date,
+@hi,
+@foreign,
+@bpt,
+@ept,
+@ph,
+);
+
+#hash of element names to the reference for their corresponding variable
+my %refs=(
+'martif' => \$martif,
+'martifHeader' => \$martifHeader,
+'fileDesc' => \$fileDesc,
+'p' =>\@p, 
+'titleStmt' => \$titleStmt,
+'title' => \$title,
+'note' => \@note,
+'publicationStmt' => \$publicationStmt,
+'sourceDesc' => \@sourceDesc,
+'encodingDesc' => \$encodingDesc,
+'revisionDesc' => \$revisionDesc,
+'change' => \@change,
+'#PCDATA' => \@pcdata,
+'text' => \$text,
+'body' => \$body,
+'back' => \$back,
+'refObjectList' => \@refObjectList,
+'refObject' => \@refObject,
+'item' => \@item,
+'placeholder' => \$placeholder,
+'termEntry' => \@termEntry,
+'langSet' => \@langSet,
+'tig' => \@tig,
+'term' => \@term,
+'termNote' => \@termNote,
+'descrip' => \@descrip,
+'descripGrp' => \@descripGrp,
+'admin' => \@admin,
+'transacGrp' => \@transacGrp,
+'ref' => \@ref,
+'xref' => \@xref,
+'transac' => \@transac,
+'transacNote' => \@transacNote,
+'date' => \@date,
+'hi' => \@hi,
+'foreign' => \@foreign,
+'bpt' => \@bpt,
+'ept' => \@ept,
+'ph' => \@ph,
+);
+
+my %comp=(
+0 => ['martif'],
+'martif' => ['martifHeader','text'],
+'martifHeader' => ['fileDesc','encodingDesc','revisionDesc'],
+'fileDesc' => ['titleStmt','publicationStmt','sourceDesc'],
+'p' => ['#PCDATA'],
+'titleStmt' => ['title','note'],
+'title' => ['#PCDATA'],
+'publicationStmt' => ['p'],
+'sourceDesc' => ['p'],
+'encodingDesc' => ['p'],
+'revisionDesc' => ['change'],
+'change' =>	['p'],
+'text' => ['body','back'],
+'body' => ['termEntry'],
+'back' => ['refObjectList'],
+'refObjectList' => ['refObject'],
+'refObject' => ['item'],
+'item' => ['#PCDATA','hi','foreign','bpt','ept','ph'],
+'termEntry' => [qw(langSet descrip descripGrp admin transacGrp note ref xref)],
+'langSet' => [qw(tig descrip descripGrp admin transacGrp note ref xref)],
+'tig' => [qw(term termNote descrip descripGrp admin transacGrp note ref xref)],
+'term' => ["#PCDATA", qw(hi)],
+'termNote' => ["#PCDATA", qw(hi foreign bpt ept ph)],
+'descrip' => ["#PCDATA", qw(hi foreign bpt ept ph)],
+'descripGrp' => [qw(descrip admin)],
+'admin' => ["#PCDATA", qw(hi foreign bpt ept ph)],
+'transacGrp' => [qw(transac transacNote date)],
+'note' => ["#PCDATA", qw(hi foreign bpt ept ph)],
+'ref' => ["#PCDATA"],
+'xref' => ["#PCDATA"],
+'transac' => ["#PCDATA", qw(hi foreign bpt ept ph)],
+'transacNote' => ["#PCDATA", qw(hi foreign bpt ept ph)],
+'date' => ["#PCDATA"],
+'hi' => ["#PCDATA"],
+'foreign' => ["#PCDATA", qw(hi foreign bpt ept ph)],
+'bpt' => ["#PCDATA"],
+'ept' => ["#PCDATA"],
+'ph' => ["#PCDATA"],
+);
+
+sub store {
+	
+	my $item = $_[0];
+	
+	#Retrieves the reference to the named variable
+	my $ref=$refs{$item->name()};
+	
+	
+	if (ref($ref) eq 'ARRAY') 
+	
+	#If ARRAY, then the element may be duplicated, push reference to array
+	{
+		push @{$ref}, $item; 
+	} 
+	
+	elsif (ref($ref) eq 'SCALAR') 
+	
+	#SCALAR means the element should be unique, but is not taken yet.
+	{
+		${$ref} = $item;
+	} 
+	
+	elsif (ref($ref) eq 'REF') 
+	
+	#REF means the element's reference is filled, and must be unique.
+	#returns 0 to indicate failure to store, element will be renamed.
+	{
+		return 0;		
+	} 
+	
+	else 
+	#The element was not in the hash of refs; should never be trigged.
+	{
+		die "Unhandled type ".$item->name().' '.ref($ref)."\n";
+	}
+	
+	#Indicates success, triggered when ref was ARRAY or SCALAR
+	return 1;
+	
+}
 
 sub log_init {
 	my ($t,$section,$log) = @_;
@@ -56,6 +224,70 @@ sub log_init {
 	
 }
 
+sub autocorrect {
+	#optional condition for special circumstances, pass true to ignore
+	my ($target,$prefer,$option,$tolerance,$condition) = @_;
+	#printf "target %s prefer %d %s option %d %s\n",
+	#$target,$#{$prefer},$prefer,$#{$option},$option;
+	
+	my %relevance = map {$_ => similarity $target, $_} (@{$prefer},@{$option});
+	
+	#while (my ($a,$b) = each %relevance) {
+	#	print $a,$b,"\n";
+	#}
+	
+	#makes list sorted by validity, with preferred first, options after
+	my @j = (
+	(reverse sort {$relevance{$a} <=> $relevance{$b}} @{$prefer}),
+	(reverse sort {$relevance{$a} <=> $relevance{$b}} @{$option}));
+	
+	foreach my $guess (@j) 
+	
+	{
+		#printf "target %s guess %s score %s\n",$target,$guess,$relevance{$guess};
+		if ($relevance{$guess}>$tolerance and eval($condition))
+		{
+			return $guess;
+		}
+	}
+	
+	return 0;
+				
+}
+
+sub name_check {
+	my ($t,$section,$log) = @_;
+	
+	#make sure that the name is one of the allowed names
+	
+	my $cname = $section->name();
+	my $pname = $section->level()>0 ? $section->parent()->name() : 0;
+	
+	if (grep {$cname eq $_} keys %comp)
+	
+	{
+		if (store($section))
+		{
+			return 1;
+		}
+	}
+	
+	if (my $guess = autocorrect($cname,$comp{$pname},[keys %refs],.5,
+	'ref($refs{$guess}) ne "REF"'))
+	
+	{
+		$section->set_name($guess);
+		store($section);
+		
+		$log->{$section}{'n_fate'} = $guess;
+		
+		return 1;
+	}
+	
+	return 0;
+	
+}
+
 sub term_log_init {
 	my ($t,$section) = @_;
 	#passes reference for %term_log to &log_init
@@ -69,9 +301,25 @@ sub handle_term {
 	
 	$term_log{$section}{'text'}=$section->children_text('#PCDATA');
 	$term_log{$section}{'text'} =~ s/\s+/ /g;
-#	print $section->name(), ' ',$t->current_line()," $test_counter","\n"x1;
 	
-	$test_counter++;
+	unless (name_check(@_,\%term_log)) 
+	
+	{
+		#my $cname = $section->name();
+		
+		my ($a,$b) = ('Original Name',$section->name());
+		#store original name as note, as well as all atts
+		do 
+		{
+			my $temp = XML::Twig::Elt->new('note' =>$a."=".$b);
+			$temp->paste(before=>$section);
+			store($temp);
+		} 
+		while (($a,$b) = each $section->atts());
+		$term_log{$section}{'n_fate'}='INVALID';
+		$section->erase();
+		
+	}
 	
 	return 1;
 }
@@ -105,9 +353,28 @@ sub handle_aux {
 	
 	$aux_log{$section}{'text'}=$section->children_text('#PCDATA');
 	$aux_log{$section}{'text'} =~ s/\s+/ /g;
-#	print $section->name(), ' ',$t->current_line()," $test_counter","\n"x1;
+
+	unless (name_check(@_,\%aux_log)) 
 	
-	$test_counter++;
+	{
+		my $id = $section->att("id") ? 
+		
+		#then keep it and append the old name in parentheses
+		$section->att("id")." (".$section->name().")" :
+		
+		#otherwise, just set the id to the original name
+		$section->name();
+		$section->set_att("id"=>$id);
+		
+		#for aux items, make sourceDesc, which is made for this kind of info
+		$section->set_name("sourceDesc");
+		
+		#capitals to trigger special message
+		$aux_log{$section}{'n_fate'}='SOURCEDESC';
+		
+		#store it. will not fail because sourceDesc is stackable
+		store($section);
+	}
 	
 	return 1;
 }
@@ -126,15 +393,37 @@ sub print_log {
 
 	{
 	
-		printf "%s of line %d is child of %s.",
+		printf $lf "%s of line %d was child of %s.",
 		$log{$section}->{'name'},
 		$log{$section}->{'line'},
 		$log{$section}->{'parent'} ? $log{$section}->{'parent'} : 'root';
+		
+		if (my $fate = $log{$section}->{'n_fate'}) {
+			if ($fate eq 'SOURCEDESC') 
+			#invalid name in auxilliary
+			{
+				printf $lf "\n%s had invalid name. Stored in a sourceDesc.",
+				$log{$section}->{'name'};
+			}
+			elsif ($fate eq 'INVALID') 
+			#invalid name in termEntry
+			{
+				printf $lf "\n%s had invalid name. Stored as notes.",
+				$log{$section}->{'name'};
+			}
+			else
+			#the standard case
+			{
+				printf $lf "\n%s was renamed to %s.",
+				$log{$section}->{'name'},
+				$fate;
+			}
+		}
 	
 		while (my($att,$contents) = each $log{$section}{'atts'}) 
 	
 		{
-			printf "\n%s has attribute %s:%s.",
+			printf $lf "\n%s has attribute %s:%s.",
 			$log{$section}->{'name'},
 			$att, $contents->[0],
 			;
@@ -142,13 +431,13 @@ sub print_log {
 	
 		if ($log{$section}->{'text'}) 
 		{
-			printf "\n%s has text '%s'.",
+			printf $lf "\n%s has text '%s'.",
 			$log{$section}->{'name'},
 			$log{$section}->{'text'},
 			;
 		} 
 	
-		print "\n\n";
+		print $lf "\n\n";
 	}
 	
 }
