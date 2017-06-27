@@ -12,11 +12,12 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $tolerance = 0.9;
 
-#version 2.10 implements namechecking and logging
-my $version = 2.10;
+#version 2.11 implements verbose logging options
+my $version = 2.11;
 
 #changes behaviour if true, used for coding purposes
 my $dev = 1;
+my $verbose = 0;
 
 #initialize file;
 my $file;
@@ -314,6 +315,8 @@ sub handle_term {
 			my $temp = XML::Twig::Elt->new('note' =>$a."=".$b);
 			$temp->paste(before=>$section);
 			store($temp);
+			
+			$term_log{$section}{'atts'}{$a}[1]='NOTE' unless $a eq 'Original Name';
 		} 
 		while (($a,$b) = each $section->atts());
 		$term_log{$section}{'n_fate'}='INVALID';
@@ -392,29 +395,34 @@ sub print_log {
 	foreach my $section (sort {$log{$a}{'line'} <=> $log{$b}{'line'}} keys %log) 
 
 	{
-	
-		printf $lf "%s of line %d was child of %s.",
-		$log{$section}->{'name'},
-		$log{$section}->{'line'},
-		$log{$section}->{'parent'} ? $log{$section}->{'parent'} : 'root';
+		#declare item to output for section at hand
+		my $i = '';
+		
+		if ($verbose) 
+		{
+			$i .= sprintf "%s of line %d was child of %s.\n",
+			$log{$section}->{'name'},
+			$log{$section}->{'line'},
+			$log{$section}->{'parent'} ? $log{$section}->{'parent'} : 'root';
+		}
 		
 		if (my $fate = $log{$section}->{'n_fate'}) {
 			if ($fate eq 'SOURCEDESC') 
 			#invalid name in auxilliary
 			{
-				printf $lf "\n%s had invalid name. Stored in a sourceDesc.",
+				$i .= sprintf "%s had invalid name. Stored in a sourceDesc.\n",
 				$log{$section}->{'name'};
 			}
 			elsif ($fate eq 'INVALID') 
 			#invalid name in termEntry
 			{
-				printf $lf "\n%s had invalid name. Stored as notes.",
+				$i .= sprintf "%s had invalid name. Stored as note.\n",
 				$log{$section}->{'name'};
 			}
 			else
 			#the standard case
 			{
-				printf $lf "\n%s was renamed to %s.",
+				$i .= sprintf "%s was renamed to %s.\n",
 				$log{$section}->{'name'},
 				$fate;
 			}
@@ -423,21 +431,39 @@ sub print_log {
 		while (my($att,$contents) = each $log{$section}{'atts'}) 
 	
 		{
-			printf $lf "\n%s has attribute %s:%s.",
+			$i .= sprintf "%s has attribute %s:%s.\n",
 			$log{$section}->{'name'},
 			$att, $contents->[0],
-			;
+			if $verbose;
+			if (my $fate = $contents->[1]) {
+				if ($fate eq 'NOTE') {
+					$i .= sprintf "Attribute %s=%s stored as note.\n",
+					$att,$contents->[0];
+				}
+				else
+				{
+					#other conditions
+				}
+				
+			}
 		}
 	
 		if ($log{$section}->{'text'}) 
 		{
-			printf $lf "\n%s has text '%s'.",
+			$i .= sprintf "%s has text '%s'.\n",
 			$log{$section}->{'name'},
 			$log{$section}->{'text'},
-			;
+			if $verbose;
 		} 
 	
-		print $lf "\n\n";
+		if ($i) {
+			printf $lf "%s on line %d:\n",
+			$log{$section}->{'name'},
+			$log{$section}->{'line'},
+			unless $verbose;
+			print $lf $i,"\n";
+		}
+		
 	}
 	
 }

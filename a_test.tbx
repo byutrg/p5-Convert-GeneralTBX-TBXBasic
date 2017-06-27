@@ -37,7 +37,7 @@
 				<ref type="crossReference" target="c2">unscheduled operation</ref>
 				<xref type="externalCrossReference" target="wikipedia.org">Wikipedia web site</xref>
 				<xref type="xGraphic" target="http://upload.wikimedia.org/wikipedia/commons/8/80/Wikipedia-logo-v2.svg">Wikipedia logo</xref>
-				<boondongle xml:lang="en">
+				<boondongle xml:lang="en" a="a" b="b">
 					<tig>
 						<term>scheduled operation</term>
 						<termNote type="partOfSpeech">preposition</termNote>
