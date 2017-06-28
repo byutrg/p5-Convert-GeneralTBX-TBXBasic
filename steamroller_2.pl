@@ -12,8 +12,9 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $tolerance = 0.9;
 
-#version 2.11 implements verbose logging options
-my $version = 2.11;
+#version 2.20 implements attribute verification 
+#Does not check att values or DCA validity yet
+my $version = 2.20;
 
 #changes behaviour if true, used for coding purposes
 my $dev = 1;
@@ -158,6 +159,49 @@ my %comp=(
 'ph' => ["#PCDATA"],
 );
 
+#hash of all allowed attributes by element
+my %atts=(
+'martif' 		  => ['type','xml:lang'],
+'martifHeader' 	  => ["id"],
+'fileDesc' 		  => ["id"],
+'p' 			  => ["id",'type','xml:lang'],
+'titleStmt' 	  => ["id",'xml:lang'],
+'title' 		  => ["id",'xml:lang'],
+'note' 			  => ["id",'xml:lang'],
+'publicationStmt' => ["id"],
+'sourceDesc'	  => ["id",'xml:lang'],
+'encodingDesc' 	  => ["id"],
+'revisionDesc' 	  => ["id",'xml:lang'],
+'change' 		  => ["id",'xml:lang'],
+'text' 			  => ["id"],
+'body' 			  => ["id"],
+'back' 			  => ["id"],
+'refObjectList'   => ["id",'type'],
+'refObject' 	  => ["id"],
+'item' 			  => ["id",'type'],
+'termEntry' 	  => [qw(id)],
+'langSet' 		  => [qw(id xml:lang)],
+'tig' 			  => [qw(id)],
+'term' 			  => [qw(id)],
+'termNote' 		  => [qw(id xml:lang type target datatype)],
+'descrip' 		  => [qw(id xml:lang type target datatype)],
+'descripGrp' 	  => [qw(id)],
+'admin' 		  => [qw(id xml:lang type target datatype)],
+'transacGrp' 	  => [qw(id)],
+'note' 			  => [qw(id)],
+'ref' 			  => [qw(id xml:lang type target datatype)],
+'xref' 			  => [qw(id target type)],
+'transac' 		  => [qw(id xml:lang type target datatype)],
+'transacNote' 	  => [qw(id xml:lang type target datatype)],
+'date' 			  => [qw(id)],
+'hi' 			  => [qw(type target xml:lang)],
+'foreign' 		  => [qw(id xml:lang)],
+'bpt' 			  => [qw(i type)],
+'ept' 			  => [qw(i)],
+'ph' 			  => [qw(type)],
+'#PCDATA' 		  => [qw()],
+);
+
 sub store {
 	
 	my $item = $_[0];
@@ -231,7 +275,7 @@ sub autocorrect {
 	#printf "target %s prefer %d %s option %d %s\n",
 	#$target,$#{$prefer},$prefer,$#{$option},$option;
 	
-	my %relevance = map {$_ => similarity $target, $_} (@{$prefer},@{$option});
+	my %relevance = map {$_ => similarity lc $target, lc $_} (@{$prefer},@{$option});
 	
 	#while (my ($a,$b) = each %relevance) {
 	#	print $a,$b,"\n";
@@ -241,7 +285,7 @@ sub autocorrect {
 	my @j = (
 	(reverse sort {$relevance{$a} <=> $relevance{$b}} @{$prefer}),
 	(reverse sort {$relevance{$a} <=> $relevance{$b}} @{$option}));
-	
+	#print $target,@j,$relevance{$j[0]},"\n";
 	foreach my $guess (@j) 
 	
 	{
@@ -289,6 +333,32 @@ sub name_check {
 	
 }
 
+sub att_check {
+	
+	my ($t,$section,$att,$log) = @_;
+	
+	my $cname = $section->name();
+	
+	if (grep {$att eq $_} @{$atts{$cname}}) {
+		#printf "Att %s matches for element %s\n",$att,$cname;
+		return 1;
+	}
+	#print "$att \n";
+	if (my $guess = autocorrect($att,$atts{$cname},[],.5,1)) {
+		
+		$section->change_att_name($att,$guess);
+		
+		#log the att if it was there originally
+		$log->{$section}{'atts'}{$att}[1]=$guess
+		if $log->{$section}{'atts'}{$att};
+		
+		return $guess;
+	} 
+	
+	return 0;
+	
+}
+
 sub term_log_init {
 	my ($t,$section) = @_;
 	#passes reference for %term_log to &log_init
@@ -304,7 +374,7 @@ sub handle_term {
 	$term_log{$section}{'text'} =~ s/\s+/ /g;
 	
 	unless (name_check(@_,\%term_log)) 
-	
+	#Abandon ship! No name found, destroy element
 	{
 		#my $cname = $section->name();
 		
@@ -317,11 +387,25 @@ sub handle_term {
 			store($temp);
 			
 			$term_log{$section}{'atts'}{$a}[1]='NOTE' unless $a eq 'Original Name';
-		} 
-		while (($a,$b) = each $section->atts());
+		} while (($a,$b) = each $section->atts());
+		
 		$term_log{$section}{'n_fate'}='INVALID';
 		$section->erase();
 		
+		return 1;
+		
+	}
+	
+	foreach my $att (keys $section->atts()) {
+		#check that the att is TBX approved
+		unless (att_check(@_,$att,\%term_log)) 
+		{
+			my $temp = XML::Twig::Elt->new('note' => $att."=".$section->att($att));
+			$temp->paste(before=>$section);
+			$section->del_att($att);
+			$term_log{$section}{'atts'}{$att}[1]='INV_NOTE' 
+			if $term_log{$section}{'atts'}{$att};
+		}
 	}
 	
 	return 1;
@@ -377,6 +461,21 @@ sub handle_aux {
 		
 		#store it. will not fail because sourceDesc is stackable
 		store($section);
+	}
+	
+	foreach my $att (keys $section->atts()) {
+		#check that the att is TBX approved
+		unless (att_check(@_,$att,\%aux_log)) 
+		{
+			my $temp = XML::Twig::Elt->new('sourceDesc');
+			my $tempp= XML::Twig::Elt->new('p'=>$att."=".$section->att($att));
+			$tempp->paste($temp);
+			$temp->paste(before=>$section);
+			
+			$section->del_att($att);
+			$aux_log{$section}{'atts'}{$att}[1]='INV_SD' 
+			if $aux_log{$section}{'atts'}{$att};
+		}
 	}
 	
 	return 1;
@@ -440,9 +539,19 @@ sub print_log {
 					$i .= sprintf "Attribute %s=%s stored as note.\n",
 					$att,$contents->[0];
 				}
+				
+				elsif ($fate eq 'INV_NOTE') {
+					$i .= sprintf "Attribute %s=%s not allowed, stored as note.\n",
+					$att,$contents->[0];
+				}
+				elsif ($fate eq 'INV_SD') {
+					$i .= sprintf "Attribute %s=%s not allowed, stored as sourceDesc.\n",
+					$att,$contents->[0];
+				}
 				else
 				{
-					#other conditions
+					$i .= sprintf "Attribute %s=%s not allowed, renamed as '%s'.\n",
+					$att,$contents->[0],$contents->[1]
 				}
 				
 			}
