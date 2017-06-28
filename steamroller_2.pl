@@ -12,9 +12,9 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $tolerance = 0.9;
 
-#version 2.20 implements attribute verification 
-#Does not check att values or DCA validity yet
-my $version = 2.20;
+#version 2.21 repents of its sins by implementing
+#a more purposeful function for storing junk data
+my $version = 2.21;
 
 #changes behaviour if true, used for coding purposes
 my $dev = 1;
@@ -202,6 +202,106 @@ my %atts=(
 '#PCDATA' 		  => [qw()],
 );
 
+my %dump=(
+'martif' 		  => [qw(sourceDesc last_child)], 	
+'martifHeader' 	  => [qw(sourceDesc last_child)], 	
+'fileDesc' 		  => [qw(sourceDesc last_child)], 	
+'p' 			  => [qw(p after)],
+'titleStmt' 	  => [qw(note last_child)],
+'title' 		  => [qw(note after)],
+'note' 			  => [qw(note after)],
+'publicationStmt' => [qw(sourceDesc after)],			
+'sourceDesc'	  => [qw(p last_child)],
+'encodingDesc' 	  => [qw(p last_child)],	
+'revisionDesc' 	  => [qw(p last_child)],    
+'change' 		  => [qw(p last_child)],    
+'text' 			  => [qw(sourceDesc before)],
+'body' 			  => [qw(sourceDesc before)],
+'back' 			  => [qw(item last_child)], 
+'refObjectList'   => [qw(item last_child)], 
+'refObject' 	  => [qw(item last_child)], 
+'item' 			  => [qw(item after)],    
+'termEntry' 	  => [qw(note last_child)], 
+'langSet' 		  => [qw(note last_child)], 
+'tig' 			  => [qw(note last_child)], 
+'term' 			  => [qw(note after)],    
+'termNote' 		  => [qw(note after)],    
+'descrip' 		  => [qw(admin after)],   
+'descripGrp' 	  => [qw(admin last_child)],
+'admin' 		  => [qw(admin after)],   
+'transacGrp' 	  => [qw(note after)],    
+'note' 			  => [qw(note after)],    
+'ref' 			  => [qw(note after)],    
+'xref' 			  => [qw(note after)],    
+'transac' 		  => [qw(note after)],    
+'transacNote' 	  => [qw(note after)],
+'date' 			  => [qw(note after)],
+'hi' 			  => [qw(parent after)],
+'foreign' 		  => [qw(parent after)],
+'bpt' 			  => [qw(parent after)],
+'ept' 			  => [qw(parent after)],
+'ph' 			  => [qw(parent after)],
+'#PCDATA' 		  => [qw(parent after)],
+);
+
+#intelligently stores disallowed data in a safe location nearby
+sub dump_truck {
+	#value is optional,used for atts
+	my ($t,$section,$data,$value,$is_att,$log) = @_;
+	
+	my $text = sprintf "%s%s%s%s",
+	$section->name(),
+	$log->{$section} ? " (from line:".$log->{$section}{'line'}.") " : "",
+	$data,
+	$value ? "=".$value : "",;
+	
+	#should only be called on termEntry and martif if $is_att is true
+	my $target = $is_att && defined $dump{$section->name()} ?
+	$section : $section->parent();
+	my ($fate,$position) = @{$dump{$target->name()}};
+	
+	if ($fate eq 'parent') {
+		
+		$target = $target->parent();
+		($fate,$position) = @{$dump{$target->name()}};
+	}
+	
+	my $message = $fate;
+	
+	if ($fate eq 'sourceDesc') {
+		my $sd = XML::Twig::Elt->new($fate);
+		my $temp = XML::Twig::Elt->new('p' => $text);
+		$temp->paste($sd);
+		$sd->paste($position => $target);
+		$message = "SOURCEDESC"
+	}
+	
+	elsif ($fate eq 'admin') {
+		my $temp = XML::Twig::Elt->new($fate => {type => 'source'} => $text);		
+		$temp->paste($position => $target);
+	}
+	
+	else
+	
+	{
+		
+		my $temp = XML::Twig::Elt->new($fate => $text);
+		$temp->paste($position => $target);
+		
+	}
+	#
+	if ($is_att) {
+		$log->{$section}{'atts'}{$data}[1]="INV_".$message;
+	}
+	
+	else
+	
+	{
+		$log->{$section}{'n_fate'}="INV_".$message;
+	}
+	
+}
+
 sub store {
 	
 	my $item = $_[0];
@@ -272,24 +372,17 @@ sub log_init {
 sub autocorrect {
 	#optional condition for special circumstances, pass true to ignore
 	my ($target,$prefer,$option,$tolerance,$condition) = @_;
-	#printf "target %s prefer %d %s option %d %s\n",
-	#$target,$#{$prefer},$prefer,$#{$option},$option;
 	
 	my %relevance = map {$_ => similarity lc $target, lc $_} (@{$prefer},@{$option});
 	
-	#while (my ($a,$b) = each %relevance) {
-	#	print $a,$b,"\n";
-	#}
-	
-	#makes list sorted by validity, with preferred first, options after
 	my @j = (
 	(reverse sort {$relevance{$a} <=> $relevance{$b}} @{$prefer}),
 	(reverse sort {$relevance{$a} <=> $relevance{$b}} @{$option}));
-	#print $target,@j,$relevance{$j[0]},"\n";
+	
 	foreach my $guess (@j) 
 	
 	{
-		#printf "target %s guess %s score %s\n",$target,$guess,$relevance{$guess};
+		
 		if ($relevance{$guess}>$tolerance and eval($condition))
 		{
 			return $guess;
@@ -340,10 +433,10 @@ sub att_check {
 	my $cname = $section->name();
 	
 	if (grep {$att eq $_} @{$atts{$cname}}) {
-		#printf "Att %s matches for element %s\n",$att,$cname;
+		
 		return 1;
 	}
-	#print "$att \n";
+	
 	if (my $guess = autocorrect($att,$atts{$cname},[],.5,1)) {
 		
 		$section->change_att_name($att,$guess);
@@ -376,20 +469,13 @@ sub handle_term {
 	unless (name_check(@_,\%term_log)) 
 	#Abandon ship! No name found, destroy element
 	{
-		#my $cname = $section->name();
+
+		dump_truck($t,$section,'(invalid name)','',0,\%term_log);
+		while (my ($a,$b) = each $section->atts()) {
+			dump_truck($t,$section,$a,$b,1,\%term_log);
+	}
 		
-		my ($a,$b) = ('Original Name',$section->name());
-		#store original name as note, as well as all atts
-		do 
-		{
-			my $temp = XML::Twig::Elt->new('note' =>$a."=".$b);
-			$temp->paste(before=>$section);
-			store($temp);
-			
-			$term_log{$section}{'atts'}{$a}[1]='NOTE' unless $a eq 'Original Name';
-		} while (($a,$b) = each $section->atts());
-		
-		$term_log{$section}{'n_fate'}='INVALID';
+	
 		$section->erase();
 		
 		return 1;
@@ -400,11 +486,10 @@ sub handle_term {
 		#check that the att is TBX approved
 		unless (att_check(@_,$att,\%term_log)) 
 		{
-			my $temp = XML::Twig::Elt->new('note' => $att."=".$section->att($att));
-			$temp->paste(before=>$section);
+			dump_truck($t,$section,$att,$section->att($att),1,\%term_log);
+
 			$section->del_att($att);
-			$term_log{$section}{'atts'}{$att}[1]='INV_NOTE' 
-			if $term_log{$section}{'atts'}{$att};
+			
 		}
 	}
 	
@@ -444,37 +529,24 @@ sub handle_aux {
 	unless (name_check(@_,\%aux_log)) 
 	
 	{
-		my $id = $section->att("id") ? 
+		dump_truck($t,$section,'(invalid name)','',0,\%aux_log);
+		while (my ($a,$b) = each $section->atts()) {
+			dump_truck($t,$section,$a,$b,1,\%term_log);
+		}
 		
-		#then keep it and append the old name in parentheses
-		$section->att("id")." (".$section->name().")" :
+		$section->erase();
 		
-		#otherwise, just set the id to the original name
-		$section->name();
-		$section->set_att("id"=>$id);
 		
-		#for aux items, make sourceDesc, which is made for this kind of info
-		$section->set_name("sourceDesc");
-		
-		#capitals to trigger special message
-		$aux_log{$section}{'n_fate'}='SOURCEDESC';
-		
-		#store it. will not fail because sourceDesc is stackable
-		store($section);
 	}
 	
 	foreach my $att (keys $section->atts()) {
 		#check that the att is TBX approved
 		unless (att_check(@_,$att,\%aux_log)) 
 		{
-			my $temp = XML::Twig::Elt->new('sourceDesc');
-			my $tempp= XML::Twig::Elt->new('p'=>$att."=".$section->att($att));
-			$tempp->paste($temp);
-			$temp->paste(before=>$section);
+			dump_truck($t,$section,$att,$section->att($att),1,\%aux_log);
 			
 			$section->del_att($att);
-			$aux_log{$section}{'atts'}{$att}[1]='INV_SD' 
-			if $aux_log{$section}{'atts'}{$att};
+			
 		}
 	}
 	
@@ -490,8 +562,9 @@ sub order_root {
 
 sub print_log {
 	my (%log) = @_;
-	
-	foreach my $section (sort {$log{$a}{'line'} <=> $log{$b}{'line'}} keys %log) 
+	my $clean = 1;
+	my @sections = sort {$log{$a}{'line'} <=> $log{$b}{'line'}} keys %log;
+	foreach my $section (@sections) 
 
 	{
 		#declare item to output for section at hand
@@ -506,16 +579,11 @@ sub print_log {
 		}
 		
 		if (my $fate = $log{$section}->{'n_fate'}) {
-			if ($fate eq 'SOURCEDESC') 
-			#invalid name in auxilliary
+			
+			if ($fate =~ /^INV_(.+)/) 
+			#invalid name from dump_truck
 			{
-				$i .= sprintf "%s had invalid name. Stored in a sourceDesc.\n",
-				$log{$section}->{'name'};
-			}
-			elsif ($fate eq 'INVALID') 
-			#invalid name in termEntry
-			{
-				$i .= sprintf "%s had invalid name. Stored as note.\n",
+				$i .= sprintf "%s had invalid name. Stored as $1.\n",
 				$log{$section}->{'name'};
 			}
 			else
@@ -535,22 +603,13 @@ sub print_log {
 			$att, $contents->[0],
 			if $verbose;
 			if (my $fate = $contents->[1]) {
-				if ($fate eq 'NOTE') {
-					$i .= sprintf "Attribute %s=%s stored as note.\n",
-					$att,$contents->[0];
-				}
-				
-				elsif ($fate eq 'INV_NOTE') {
-					$i .= sprintf "Attribute %s=%s not allowed, stored as note.\n",
-					$att,$contents->[0];
-				}
-				elsif ($fate eq 'INV_SD') {
-					$i .= sprintf "Attribute %s=%s not allowed, stored as sourceDesc.\n",
+				if ($fate =~ /^INV_(.+)/) {
+					$i .= sprintf "Attribute %s=%s stored in a $1.\n",
 					$att,$contents->[0];
 				}
 				else
 				{
-					$i .= sprintf "Attribute %s=%s not allowed, renamed as '%s'.\n",
+					$i .= sprintf "Attribute %s=%s not allowed, renamed to '%s'.\n",
 					$att,$contents->[0],$contents->[1]
 				}
 				
@@ -571,9 +630,15 @@ sub print_log {
 			$log{$section}->{'line'},
 			unless $verbose;
 			print $lf $i,"\n";
+			$clean = 0;
 		}
 		
 	}
+	
+	printf $lf "%s on line %s is clean.\n",
+	$log{$sections[0]}->{'name'},
+	$log{$sections[0]}->{'line'},
+	if $clean;
 	
 }
 

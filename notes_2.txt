@@ -14,6 +14,7 @@ order_check
 	PCDATA content check for DCA, date here (after all is ordered)
 	hash to enforce minimal structure
 	home-finding algorithm
+	sort within element with twig's sorter called on all descendents instead of manually
 
 handle_term
 	during term order check, check/generate backmatter.
