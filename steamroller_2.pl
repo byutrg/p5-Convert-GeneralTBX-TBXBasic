@@ -12,9 +12,10 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $tolerance = 0.9;
 
-#version 2.21 repents of its sins by implementing
-#a more purposeful function for storing junk data
-my $version = 2.21;
+#version 2.22 checks DCA for correct value data 
+#next version will enforce required attributes before DCA checking
+
+my $version = 2.22;
 
 #changes behaviour if true, used for coding purposes
 my $dev = 1;
@@ -244,6 +245,104 @@ my %dump=(
 '#PCDATA' 		  => [qw(parent after)],
 );
 
+#hash of datcat values to the terms they match, used in dca_check
+my %datcats = (
+"TBX-Basic"					=> 'martif',
+'administrativeStatus'		=> 'termNote',
+'geographicalUsage'			=> 'termNote',
+'grammaticalGender'			=> 'termNote',
+'partOfSpeech'				=> 'termNote',
+'termLocation'				=> 'termNote',
+'termType'					=> 'termNote',
+'context'					=> 'descrip',
+'definition'				=> 'descrip',
+'subjectField'				=> 'descrip',
+'crossReference'			=> 'ref',
+'externalCrossReference'	=> 'xref',                       	
+'xGraphic'					=> 'xref',                                     	
+'customerSubset'			=> 'admin',                              	
+'projectSubset'				=> 'admin',
+'source'					=> 'admin',
+'responsibility'			=> 'transacNote',
+'transactionType'			=> 'transac',
+'DCSName'					=> 'p',
+'XCSURI'					=> 'p',
+'XCSContent'				=> 'p',    
+'respPerson'				=> 'refObjectList',
+'fn'						=> 'item',
+'n'							=> 'item',
+'nickname'					=> 'item',
+'photo'						=> 'item', #item types imported from 
+'bday'						=> 'item',	#https://tools.ietf.org/html/rfc6350
+'anniversary'				=> 'item', #most left out to avoid
+'gender'					=> 'item', #clogging up the algorithms 
+'adr'						=> 'item', 
+'tel'						=> 'item', 
+'email'						=> 'item', 
+'impp'						=> 'item',
+'lang'						=> 'item', #future version should recognize these
+'tz'						=> 'item', #as valid but not use them as guesses
+'geo'						=> 'item',
+'title'						=> 'item',
+'role'						=> 'item',
+'logo'						=> 'item',
+'org'						=> 'item',
+'member'					=> 'item',
+'related'					=> 'item',
+'categories'				=> 'item',
+'prodid'					=> 'item',
+'rev'						=> 'item',
+'sound'						=> 'item',
+'uid'						=> 'item',
+'clientpidmap'				=> 'item',
+'url'						=> 'item',
+'version'					=> 'item',
+'bold'						=> 'bpt',	   # = Bold                      
+'ulined'					=> 'bpt',     # = Underline              
+'dulined'					=> 'bpt',     # = Double-underlined      
+'color'						=> 'bpt',     # = Color change           
+'struct'					=> 'bpt',     # = XML/SGML structure
+'italic'					=> 'bpt',     # = Italic
+'scap'						=> 'bpt',     # = Small caps
+'font'						=> 'bpt',     # = Font change
+'link'						=> 'bpt',     # = Linked text
+'index'						=> 'ph',	   # = Index marker          these are text     
+'time'						=> 'ph',      # = Time                  markup tags
+'enote'						=> 'ph',      # = End-note                 
+'image'						=> 'ph',      # = Image                    
+'lb'						=> 'ph',      # = Line break               
+'inset'						=> 'ph',      # = Inset                        
+'date'						=> 'ph',      # = Date
+'fnote'						=> 'ph',      # = Footnote
+'alt'						=> 'ph',      # = Alternate text
+'pb'						=> 'ph',      # = Page break			bpt ph types inhereted from
+);								
+
+#guess from these if value invalid, to avoid spurrious 'color' elements
+my @datguess = (
+'administrativeStatus'		,
+'geographicalUsage'			,
+'grammaticalGender'			,
+'partOfSpeech'				,
+'termLocation'				,
+'termType'					,
+'context'					,
+'definition'				,
+'subjectField'				,
+'crossReference'			,
+'externalCrossReference'	,             
+'xGraphic'					,             
+'customerSubset'			,             
+'projectSubset'				,
+'source'					,
+'responsibility'			,
+'transactionType'			,
+'DCSName'					,
+'XCSURI'					,
+'XCSContent'				,
+'respPerson'				,
+);
+
 #intelligently stores disallowed data in a safe location nearby
 sub dump_truck {
 	#value is optional,used for atts
@@ -289,7 +388,12 @@ sub dump_truck {
 		$temp->paste($position => $target);
 		
 	}
-	#
+	
+	#adds special log message for bad DCA data
+	if ($data eq 'Data:') {
+		$message.="_DATA";
+	}
+	
 	if ($is_att) {
 		$log->{$section}{'atts'}{$data}[1]="INV_".$message;
 	}
@@ -452,9 +556,48 @@ sub att_check {
 	
 }
 
+sub dca_check {
+	
+	my ($t,$section,$log) = @_;
+    
+	return 1 unless my $value = $section->att('type');
+	
+	my $cname = $section->name();
+	#printf "Name %s Value %s\n",$cname, $value;
+	
+	if (grep {$value eq $_} keys %datcats) {
+		
+		##match_correct();
+		
+		return 1;
+		
+	}
+	
+	if (my $guess = autocorrect($value,\@datguess,[],.5,1)) {
+		
+		#printf "Name %s Value %s Guess %s\n",$cname, $value, $guess;
+		
+		$section->set_att(type => $guess);
+		
+		$log->{$section}{'atts'}{'type'}[1].="=$guess"
+		if $log->{$section}{'atts'}{'type'};
+		
+		###match_correct();
+		
+		return 1;
+		
+	}
+	
+	#printf "!!Name %s Value %s\n",$cname, $value;
+	
+	return 0;
+	
+}
+
 sub term_log_init {
 	my ($t,$section) = @_;
 	#passes reference for %term_log to &log_init
+	#print $section->name(),' ',$section,"\n";
 	log_init($t,$section,\%term_log);
 	
 	return 1;
@@ -473,7 +616,7 @@ sub handle_term {
 		dump_truck($t,$section,'(invalid name)','',0,\%term_log);
 		while (my ($a,$b) = each $section->atts()) {
 			dump_truck($t,$section,$a,$b,1,\%term_log);
-	}
+		}
 		
 	
 		$section->erase();
@@ -491,6 +634,24 @@ sub handle_term {
 			$section->del_att($att);
 			
 		}
+	}
+	
+	unless (dca_check($t,$section,\%term_log)) {
+		
+		
+		if ($section->text(no_recurse=>1)) {
+			dump_truck($t,$section,'Data:',
+			$section->text(no_recurse=>1),0,\%term_log);
+			$section->first_child("#PCDATA")->delete();
+			#causes pretty print issues with marked up pcdata
+		}
+		
+		while (my ($a,$b) = each $section->atts()) {
+			dump_truck($t,$section,$a,$b,1,\%term_log);
+		}
+		
+		$section->erase();
+		
 	}
 	
 	return 1;
@@ -550,6 +711,31 @@ sub handle_aux {
 		}
 	}
 	
+	unless (dca_check($t,$section,\%aux_log)) {
+		
+		
+		if ($section->name() eq 'martif') {
+			$section->set_att(type=>"TBX-Basic");
+			#TEMPORARY MEASURE
+		}
+		else
+		{
+			if ($section->text(no_recurse=>1)) {
+				dump_truck($t,$section,'Data:',
+				$section->text(no_recurse=>1),0,\%aux_log);
+				$section->first_child("#PCDATA")->delete();
+				#causes pretty print issues with marked up pcdata
+			}
+			
+			while (my ($a,$b) = each $section->atts()) {
+				dump_truck($t,$section,$a,$b,1,\%aux_log);
+			}
+			$section->erase();
+		}
+		
+		
+	}
+	
 	return 1;
 }
 
@@ -562,6 +748,7 @@ sub order_root {
 
 sub print_log {
 	my (%log) = @_;
+	
 	my $clean = 1;
 	my @sections = sort {$log{$a}{'line'} <=> $log{$b}{'line'}} keys %log;
 	foreach my $section (@sections) 
@@ -569,7 +756,7 @@ sub print_log {
 	{
 		#declare item to output for section at hand
 		my $i = '';
-		
+		#print $log{$section}->{'name'},"\n";
 		if ($verbose) 
 		{
 			$i .= sprintf "%s of line %d was child of %s.\n",
@@ -580,11 +767,19 @@ sub print_log {
 		
 		if (my $fate = $log{$section}->{'n_fate'}) {
 			
-			if ($fate =~ /^INV_(.+)/) 
+			if ($fate =~ /^INV_(.+?)(_DATA|)$/) 
 			#invalid name from dump_truck
 			{
-				$i .= sprintf "%s had invalid name. Stored as $1.\n",
-				$log{$section}->{'name'};
+				if ($2) {
+					$i .= sprintf "%s had bad data category '%s'. Stored as $1.\n",
+									$log{$section}->{'name'},
+									$log{$section}{'atts'}{'type'}[0];
+				}
+				else
+				{
+					$i .= sprintf "%s had invalid name. Stored as $1.\n",
+									$log{$section}->{'name'};
+				}
 			}
 			else
 			#the standard case
@@ -609,8 +804,16 @@ sub print_log {
 				}
 				else
 				{
-					$i .= sprintf "Attribute %s=%s not allowed, renamed to '%s'.\n",
-					$att,$contents->[0],$contents->[1]
+					if ($fate =~ m/=(.+?)$/) {
+						$i .= sprintf "Data Category '%s' not allowed,".
+						" renamed to '%s'.\n",
+						$contents->[0],	$1;
+					}
+					else
+					{
+						$i .= sprintf "Attribute %s=%s not allowed, renamed to '%s'.\n",
+						$att,$contents->[0],$contents->[1];
+					}
 				}
 				
 			}
@@ -635,7 +838,7 @@ sub print_log {
 		
 	}
 	
-	printf $lf "%s on line %s is clean.\n",
+	printf $lf "%s on line %s is clean.\n\n",
 	$log{$sections[0]}->{'name'},
 	$log{$sections[0]}->{'line'},
 	if $clean;
