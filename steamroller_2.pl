@@ -12,10 +12,9 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $tolerance = 0.9;
 
-#version 2.22 checks DCA for correct value data 
-#next version will enforce required attributes before DCA checking
+#version 2.23 enforces minimal required attributes
 
-my $version = 2.22;
+my $version = 2.23;
 
 #changes behaviour if true, used for coding purposes
 my $dev = 1;
@@ -343,6 +342,28 @@ my @datguess = (
 'respPerson'				,
 );
 
+my %req_atts = (
+'langSet'		=> ['check','xml:lang', 'und'], #'und' is ISO 639-2 for undetermined
+'refObjectList' => ['check','type','respPerson'],
+'admin'			=> ['check','type','source'],
+'transacNote'	=> ['check','type','responsibility'],
+
+'martif'		=> ['check','xml:lang', 'und',
+					'set','type', 'TBX-BASIC'],
+
+
+'termNote'		=> ['kill','type'],
+'descrip'		=> ['kill','type'],
+'transacSpec'	=> ['kill','type'],
+
+'ref'			=> ['kill','type'],
+
+'xref'			=> ['fix','target',
+					'fix','type'],
+					
+'termEntry' 	=> ['fix','id'],
+);
+
 #intelligently stores disallowed data in a safe location nearby
 sub dump_truck {
 	#value is optional,used for atts
@@ -556,6 +577,101 @@ sub att_check {
 	
 }
 
+#checks to make sure required attributes found in @req_atts are present
+sub prereq {
+	
+	my ($t,$section,$log) = @_;
+	
+	my $cname = $section->name();
+	
+	return 1 unless $req_atts{$cname};
+	
+	my @exec = @{$req_atts{$cname}};
+	
+	while (my $com = shift @exec) {
+		if ($com eq 'kill') {
+			my $att = shift @exec;
+			unless ($section->att($att)) {
+				
+				if ($section->text(no_recurse=>1)) {
+					dump_truck($t,$section,"missing attribute $att",
+					$section->text(no_recurse=>1),0,$log);
+					$section->first_child("#PCDATA")->delete();
+					#causes pretty print issues with marked up pcdata
+				}
+		
+				while (my ($a,$b) = each $section->atts()) {
+					dump_truck($t,$section,$a,$b,1,$log);
+				}
+				
+				$section->erase();
+				
+			}
+		} 
+		elsif ($com eq 'check') {
+			my $att = shift @exec;
+			my $guess = shift @exec;
+			unless ($section->att($att)) {
+				$section->set_att($att=>$guess);
+				$log->{$section}{'atts'}{$att}[1]=$guess;
+			}
+		}
+		elsif ($com eq 'fix') {
+			my $att = shift @exec;
+			unless ($section->att($att)) {
+				#all fixes are special cases
+				if ($att eq 'id') {
+					$section->add_id();
+					$log->{$section}{'atts'}{'id'}[1]=$section->att('id');
+				}
+				elsif ($att eq 'target') 
+				{
+					#umm...in one bad tbx, the target was just the text
+					if ($section->text() =~ m/\.\w{3,}$/) {
+						$section->set_att(target=>$section->text());
+						$log->{$section}{'atts'}{'target'}[1]=$section->text();
+					} else {
+						#destroy it!
+						if ($section->text(no_recurse=>1)) {
+							dump_truck($t,$section,"missing attribute $att",
+							$section->text(no_recurse=>1),0,$log);
+							$section->first_child("#PCDATA")->delete();
+							#causes pretty print issues with marked up pcdata
+						}
+		
+						while (my ($a,$b) = each $section->atts()) {
+							dump_truck($t,$section,$a,$b,1,$log);
+						}
+					}
+				}
+				elsif ($att eq 'type') 
+				{
+					if ($section->att('target') =~ m/\.(jpg|png|gif|svg)$/) {
+						$section->set_att('type'=>'xGraphic');
+						$log->{$section}{'atts'}{'type'}[1]='xGraphic';
+					}
+					else
+					{
+						$section->set_att('type'=>'externalCrossReference');
+						$log->{$section}{'atts'}{'type'}[1]='externalCrossReference';
+					}
+				}
+			}
+		}
+		elsif ($com eq 'set') {
+			my $att = shift @exec;
+			my $val = shift @exec;
+			unless ($section->att($att) and lc $section->att($att) eq lc $val) {
+				$section->set_att($att=>$val);
+				$log->{$section}{'atts'}{$att}[1]=$val;
+			}
+		}
+	}
+	
+	return 1;
+	
+}
+
 sub dca_check {
 	
 	my ($t,$section,$log) = @_;
@@ -636,6 +752,8 @@ sub handle_term {
 		}
 	}
 	
+	prereq($t,$section,\%term_log);
+	
 	unless (dca_check($t,$section,\%term_log)) {
 		
 		
@@ -710,6 +828,7 @@ sub handle_aux {
 			
 		}
 	}
+	prereq($t,$section,\%aux_log);
 	
 	unless (dca_check($t,$section,\%aux_log)) {
 		
@@ -798,7 +917,11 @@ sub print_log {
 			$att, $contents->[0],
 			if $verbose;
 			if (my $fate = $contents->[1]) {
-				if ($fate =~ /^INV_(.+)/) {
+				if (not $contents->[0]) {
+					$i .= sprintf "Attribute %s missing, set to '%s'.\n",
+					$att, $contents->[1];
+				} 
+				elsif ($fate =~ /^INV_(.+)/) {
 					$i .= sprintf "Attribute %s=%s stored in a $1.\n",
 					$att,$contents->[0];
 				}
@@ -880,6 +1003,8 @@ twig_handlers 		=> {
 }
 	
 );
+
+$twig->set_id_seed('c');
 
 $twig->parsefile($file);
 
