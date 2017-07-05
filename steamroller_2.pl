@@ -12,9 +12,10 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $tolerance = 0.9;
 
-#version 2.23 enforces minimal required attributes
+#version 2.24 improves on the log output
+#works but fails to trigger log message OVERHAUL
 
-my $version = 2.23;
+my $version = 2.24;
 
 #changes behaviour if true, used for coding purposes
 my $dev = 1;
@@ -393,7 +394,7 @@ sub dump_truck {
 		my $temp = XML::Twig::Elt->new('p' => $text);
 		$temp->paste($sd);
 		$sd->paste($position => $target);
-		$message = "SOURCEDESC"
+		$message = "SOURCEDESC";
 	}
 	
 	elsif ($fate eq 'admin') {
@@ -416,13 +417,18 @@ sub dump_truck {
 	}
 	
 	if ($is_att) {
-		$log->{$section}{'atts'}{$data}[1]="INV_".$message;
+		#$log->{$section}{'atts'}{$data}[1]="INV_".$message;
+		$log->{$section}{'atts'}{$data}{'code'} = "INVALID";
+		$log->{$section}{'atts'}{$data}{'a_fate'} = $fate;
 	}
 	
 	else
 	
 	{
-		$log->{$section}{'n_fate'}="INV_".$message;
+		#$log->{$section}{'n_fate'}="INV_".$message;
+		$log->{$section}{'n_code'}=
+		$value ? "BADCAT" : "RENAME";
+		$log->{$section}{'n_fate'}=$fate; #for now
 	}
 	
 }
@@ -470,11 +476,11 @@ sub store {
 
 sub log_init {
 	my ($t,$section,$log) = @_;
-	
 	#uses the Elt hash ref as the key
 	$log->{$section} = {
 		'name' 		=> $section->name(),
 		'n_fate'	=> 0,
+		'n_code'	=> 0,
 		'line' 		=> $t->current_line(),
 		'parent'	=> $section->level()>0 ? $section->parent()->name() : 0,
 		'p_fate'	=> 0,
@@ -487,7 +493,12 @@ sub log_init {
 	#iterates over all atts of the object
 	{
 		#first value is the original value, second is its 'fate', as above
-		$log->{$section}{'atts'}{$att} = [$val,0];
+		$log->{$section}{'atts'}{$att} = {
+			'val' 		=> $val,
+			'v_fate'	=> 0,
+			'code'		=> 0,
+			'a_fate'	=> 0,
+		};
 	}
 	
 	return 1;
@@ -543,6 +554,7 @@ sub name_check {
 		store($section);
 		
 		$log->{$section}{'n_fate'} = $guess;
+		$log->{$section}{'n_code'} = "RENAME";
 		
 		return 1;
 	}
@@ -567,8 +579,11 @@ sub att_check {
 		$section->change_att_name($att,$guess);
 		
 		#log the att if it was there originally
-		$log->{$section}{'atts'}{$att}[1]=$guess
-		if $log->{$section}{'atts'}{$att};
+		if ($log->{$section}{'atts'}{$att}) {
+			$log->{$section}{'atts'}{$att}{'code'}="RENAME";
+			$log->{$section}{'atts'}{$att}{'a_fate'}=$guess;
+		}
+		
 		
 		return $guess;
 	} 
@@ -613,7 +628,8 @@ sub prereq {
 			my $guess = shift @exec;
 			unless ($section->att($att)) {
 				$section->set_att($att=>$guess);
-				$log->{$section}{'atts'}{$att}[1]=$guess;
+				$log->{$section}{'atts'}{$att}{'code'}="MISSING";
+				$log->{$section}{'atts'}{$att}{'v_fate'}=$guess;
 			}
 		}
 		elsif ($com eq 'fix') {
@@ -622,14 +638,16 @@ sub prereq {
 				#all fixes are special cases
 				if ($att eq 'id') {
 					$section->add_id();
-					$log->{$section}{'atts'}{'id'}[1]=$section->att('id');
+					$log->{$section}{'atts'}{'id'}{'v_fate'}=$section->att('id');
+					$log->{$section}{'atts'}{'id'}{'code'}="MISSING";
 				}
 				elsif ($att eq 'target') 
 				{
 					#umm...in one bad tbx, the target was just the text
 					if ($section->text() =~ m/\.\w{3,}$/) {
 						$section->set_att(target=>$section->text());
-						$log->{$section}{'atts'}{'target'}[1]=$section->text();
+						$log->{$section}{'atts'}{'target'}{'v_fate'}=$section->text();
+						$log->{$section}{'atts'}{'target'}{'code'}="MISSING";
 					} else {
 						#destroy it!
 						if ($section->text(no_recurse=>1)) {
@@ -648,12 +666,15 @@ sub prereq {
 				{
 					if ($section->att('target') =~ m/\.(jpg|png|gif|svg)$/) {
 						$section->set_att('type'=>'xGraphic');
-						$log->{$section}{'atts'}{'type'}[1]='xGraphic';
+						$log->{$section}{'atts'}{'type'}{'code'}="MISSING";
+						$log->{$section}{'atts'}{'type'}{'v_fate'}='xGraphic';
 					}
 					else
 					{
 						$section->set_att('type'=>'externalCrossReference');
-						$log->{$section}{'atts'}{'type'}[1]='externalCrossReference';
+						$log->{$section}{'atts'}{'type'}{'v_fate'}=
+						'externalCrossReference';
+						$log->{$section}{'atts'}{'type'}{'code'}="MISSING";
 					}
 				}
 			}
@@ -661,9 +682,24 @@ sub prereq {
 		elsif ($com eq 'set') {
 			my $att = shift @exec;
 			my $val = shift @exec;
-			unless ($section->att($att) and lc $section->att($att) eq lc $val) {
+			if ($section->att($att)) {
+				unless (lc $section->att($att) eq lc $val)
+				
+				{
+					$section->set_att($att=>$val);
+					$log->{$section}{'atts'}{$att}{'v_fate'}=$val;
+					$log->{$section}{'atts'}{$att}{'code'}=
+					$log->{$section}{'atts'}{$att}{'code'} eq "RENAME" ?
+					"OVERHAUL": "REVAL";
+				}
+				
+			}
+			else
+			{
 				$section->set_att($att=>$val);
-				$log->{$section}{'atts'}{$att}[1]=$val;
+				$log->{$section}{'atts'}{$att}{'v_fate'}=$val;
+				$log->{$section}{'atts'}{$att}{'code'}="MISSING";
+				
 			}
 		}
 	}
@@ -695,8 +731,12 @@ sub dca_check {
 		
 		$section->set_att(type => $guess);
 		
-		$log->{$section}{'atts'}{'type'}[1].="=$guess"
-		if $log->{$section}{'atts'}{'type'};
+		if ($log->{$section}{'atts'}{'type'}) {
+			$log->{$section}{'atts'}{'type'}{'code'}=
+			$log->{$section}{'atts'}{'type'}{'code'} eq "RENAME" ?
+			"OVERHAUL": "REVAL";
+			$log->{$section}{'atts'}{'type'}{'v_fate'}=$guess;
+		}
 		
 		###match_correct();
 		
@@ -884,62 +924,63 @@ sub print_log {
 			$log{$section}->{'parent'} ? $log{$section}->{'parent'} : 'root';
 		}
 		
-		if (my $fate = $log{$section}->{'n_fate'}) {
+		if (my $fate = $log{$section}->{'n_code'}) {
 			
-			if ($fate =~ /^INV_(.+?)(_DATA|)$/) 
-			#invalid name from dump_truck
-			{
-				if ($2) {
-					$i .= sprintf "%s had bad data category '%s'. Stored as $1.\n",
-									$log{$section}->{'name'},
-									$log{$section}{'atts'}{'type'}[0];
-				}
-				else
-				{
-					$i .= sprintf "%s had invalid name. Stored as $1.\n",
-									$log{$section}->{'name'};
-				}
-			}
-			else
-			#the standard case
-			{
-				$i .= sprintf "%s was renamed to %s.\n",
+			if ($fate eq 'BADCAT') {
+				my $x;
+				$i .= sprintf "%s had bad data category%s. Stored as %s.\n",
 				$log{$section}->{'name'},
-				$fate;
+				($x = $log{$section}{'atts'}{'type'}{'val'}) ? " '$x'" : '',
+				$log{$section}->{'n_fate'};
 			}
+			
+			elsif ($fate eq 'INVALID') {
+				$i .= sprintf "%s had invalid name. Stored as %s.\n",
+				$log{$section}->{'name'},$log{$section}->{'n_fate'};
+			}
+			
+			elsif ($fate eq 'RENAME') {
+				$i .= sprintf "%s had invalid name, renamed %s.\n",
+				$log{$section}->{'name'},$log{$section}->{'n_fate'};
+			}
+			
 		}
 	
-		while (my($att,$contents) = each $log{$section}{'atts'}) 
-	
+		foreach my $att (sort keys $log{$section}{'atts'}) 
+
 		{
+			my $contents = $log{$section}{'atts'}{$att};
 			$i .= sprintf "%s has attribute %s:%s.\n",
 			$log{$section}->{'name'},
 			$att, $contents->[0],
 			if $verbose;
-			if (my $fate = $contents->[1]) {
-				if (not $contents->[0]) {
-					$i .= sprintf "Attribute %s missing, set to '%s'.\n",
-					$att, $contents->[1];
-				} 
-				elsif ($fate =~ /^INV_(.+)/) {
-					$i .= sprintf "Attribute %s=%s stored in a $1.\n",
-					$att,$contents->[0];
+			if (my $code = $contents->{'code'}) {
+				if ($code eq "MISSING") {
+					$i .= sprintf "!Attribute %s missing, set to '%s'.\n",
+					$att, $contents->{'v_fate'};
 				}
-				else
-				{
-					if ($fate =~ m/=(.+?)$/) {
-						$i .= sprintf "Data Category '%s' not allowed,".
-						" renamed to '%s'.\n",
-						$contents->[0],	$1;
-					}
-					else
-					{
-						$i .= sprintf "Attribute %s=%s not allowed, renamed to '%s'.\n",
-						$att,$contents->[0],$contents->[1];
-					}
+				elsif ($code eq "INVALID") {
+					$i .= sprintf "!!Attribute %s=%s was invalid, stored as %s.\n",
+					$att, $contents->{'val'}, $contents->{'a_fate'};
 				}
-				
+				elsif ($code eq "REVAL") {
+					$i .= sprintf "!!!'%s' value '%s' invalid, changed to '%s'.\n",
+					$att, $contents->{'val'}, $contents->{'v_fate'};
+				}
+				elsif ($code eq "RENAME") {
+					$i .= sprintf "!!!!Attribute name '%s' invalid, changed to '%s'.\n",
+					$att, $contents->{'a_fate'};
+				}
+				elsif ($code eq "OVERHAUL") {
+					$i .= sprintf "!!!!!Attribute %s=%s changed to %s=%s.\n",
+					$att, $contents->{'val'},
+					$contents->{'a_fate'},$contents->{'v_fate'};
+				}
+				else {
+					$i .= sprintf "Unknown Error on $att.\n";
+				}
 			}
+			
 		}
 	
 		if ($log{$section}->{'text'}) 
