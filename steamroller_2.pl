@@ -12,10 +12,10 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $tolerance = 0.9;
 
-#version 2.24 improves on the log output
-#works but fails to trigger log message OVERHAUL
+#version 2.25 improves on the log output
+#fixes trigger log message OVERHAUL
 
-my $version = 2.24;
+my $version = 2.25;
 
 #changes behaviour if true, used for coding purposes
 my $dev = 1;
@@ -581,7 +581,8 @@ sub att_check {
 		#log the att if it was there originally
 		if ($log->{$section}{'atts'}{$att}) {
 			$log->{$section}{'atts'}{$att}{'code'}="RENAME";
-			$log->{$section}{'atts'}{$att}{'a_fate'}=$guess;
+			$log->{$section}{'atts'}{$att}{'a_fate'}=$att;
+			$log->{$section}{'atts'}{$guess}= delete $log->{$section}{'atts'}{$att};
 		}
 		
 		
@@ -969,12 +970,12 @@ sub print_log {
 				}
 				elsif ($code eq "RENAME") {
 					$i .= sprintf "!!!!Attribute name '%s' invalid, changed to '%s'.\n",
-					$att, $contents->{'a_fate'};
+					$contents->{'a_fate'},$att;
 				}
 				elsif ($code eq "OVERHAUL") {
 					$i .= sprintf "!!!!!Attribute %s=%s changed to %s=%s.\n",
-					$att, $contents->{'val'},
-					$contents->{'a_fate'},$contents->{'v_fate'};
+					$contents->{'a_fate'}, $contents->{'val'},
+					$att, $contents->{'v_fate'};
 				}
 				else {
 					$i .= sprintf "Unknown Error on $att.\n";
