@@ -12,17 +12,16 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $tolerance = 0.9;
 
-#version 2.25 improves on the log output
-#fixes trigger log message OVERHAUL
+#version 2.26 implements name-changing for data categories
 
-my $version = 2.25;
+my $version = 2.26;
 
 #changes behaviour if true, used for coding purposes
 my $dev = 1;
 my $verbose = 0;
 
-#initialize file;
-my $file;
+#initialize file; 
+my $file; 
 
 my $test_counter=0;
 
@@ -411,11 +410,6 @@ sub dump_truck {
 		
 	}
 	
-	#adds special log message for bad DCA data
-	if ($data eq 'Data:') {
-		$message.="_DATA";
-	}
-	
 	if ($is_att) {
 		#$log->{$section}{'atts'}{$data}[1]="INV_".$message;
 		$log->{$section}{'atts'}{$data}{'code'} = "INVALID";
@@ -709,6 +703,19 @@ sub prereq {
 	
 }
 
+sub match_up {
+	my ($t, $section, $log) = @_;
+	
+	unless (my $guess = $datcats{$section->att('type')} and
+	$datcats{$section->att('type')} eq $section->name()) {
+		
+		$section->set_name($guess);
+		$log->{$section}{'n_fate'} = $guess;
+		$log->{$section}{'n_code'} = "MISMATCH";
+	} 
+	
+}
+
 sub dca_check {
 	
 	my ($t,$section,$log) = @_;
@@ -720,7 +727,7 @@ sub dca_check {
 	
 	if (grep {$value eq $_} keys %datcats) {
 		
-		##match_correct();
+		match_up($t, $section, $log);
 		
 		return 1;
 		
@@ -739,7 +746,7 @@ sub dca_check {
 			$log->{$section}{'atts'}{'type'}{'v_fate'}=$guess;
 		}
 		
-		###match_correct();
+		match_up($t, $section, $log);
 		
 		return 1;
 		
@@ -945,6 +952,17 @@ sub print_log {
 				$log{$section}->{'name'},$log{$section}->{'n_fate'};
 			}
 			
+			elsif ($fate eq 'MISMATCH') {
+				my $x = $log{$section}{'atts'}{'type'}{'v_fate'} ?
+				$log{$section}{'atts'}{'type'}{'v_fate'} : 
+				$log{$section}{'atts'}{'type'}{'val'};
+				$i .= sprintf "%s had mismatched data category%s. ".
+				"Renamed element '%s'\n",
+				$log{$section}->{'name'},
+				$x ? " '$x'" : '',
+				$log{$section}->{'n_fate'};
+			}
+			
 		}
 	
 		foreach my $att (sort keys $log{$section}{'atts'}) 
@@ -957,23 +975,23 @@ sub print_log {
 			if $verbose;
 			if (my $code = $contents->{'code'}) {
 				if ($code eq "MISSING") {
-					$i .= sprintf "!Attribute %s missing, set to '%s'.\n",
+					$i .= sprintf "Attribute %s missing, set to '%s'.\n",
 					$att, $contents->{'v_fate'};
 				}
 				elsif ($code eq "INVALID") {
-					$i .= sprintf "!!Attribute %s=%s was invalid, stored as %s.\n",
+					$i .= sprintf "Attribute %s=%s was invalid, stored as %s.\n",
 					$att, $contents->{'val'}, $contents->{'a_fate'};
 				}
 				elsif ($code eq "REVAL") {
-					$i .= sprintf "!!!'%s' value '%s' invalid, changed to '%s'.\n",
+					$i .= sprintf "'%s' value '%s' invalid, changed to '%s'.\n",
 					$att, $contents->{'val'}, $contents->{'v_fate'};
 				}
 				elsif ($code eq "RENAME") {
-					$i .= sprintf "!!!!Attribute name '%s' invalid, changed to '%s'.\n",
+					$i .= sprintf "Attribute name '%s' invalid, changed to '%s'.\n",
 					$contents->{'a_fate'},$att;
 				}
 				elsif ($code eq "OVERHAUL") {
-					$i .= sprintf "!!!!!Attribute %s=%s changed to %s=%s.\n",
+					$i .= sprintf "Attribute %s=%s changed to %s=%s.\n",
 					$contents->{'a_fate'}, $contents->{'val'},
 					$att, $contents->{'v_fate'};
 				}
