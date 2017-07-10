@@ -12,9 +12,13 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $tolerance = 0.9;
 
-#version 2.26 implements name-changing for data categories
+#version 2.30 starts to implement order checking
+#this version enforces minimal children requirements
+#currently creates missing children, but won't try to find them
+#also doesn't log the creation of these children, 
+#just uploading before I break something
 
-my $version = 2.26;
+my $version = 2.30;
 
 #changes behaviour if true, used for coding purposes
 my $dev = 1;
@@ -364,6 +368,56 @@ my %req_atts = (
 'termEntry' 	=> ['fix','id'],
 );
 
+my %req_kids = (
+'termEntry' 		=> [qw(langSet)],
+'langSet' 			=> [qw(tig)],
+'tig' 				=> [qw(term)],
+                	
+'descripGrp' 		=> [qw(descrip)],
+                	
+'transacGrp' 		=> [qw(transac)],
+                	
+'martif' 			=> [qw(martifHeader text)],
+'martifHeader' 		=> [qw(fileDesc)],
+'fileDesc' 			=> [qw(sourceDesc)],
+'titleStmt' 		=> [qw(title)],
+
+'publicationStmt' 	=> [qw(p)],
+'sourceDesc' 		=> [qw(p)],
+'encodingDesc' 		=> [qw(p)],
+'revisionDesc' 		=> [qw(change)],
+'change' 			=> [qw(p)],
+
+'text' 				=> [qw(body)],
+#'body' 				=> [qw(termEntry)],
+       				
+'back' 				=> [qw(refObjectList)],
+'refObjectList' 	=> [qw(refObject)],
+'refObject' 		=> [qw(item)],
+'#PCDATA'			=> []
+);
+
+my %adopt = (
+'termEntry' 		=> [qw(look xml:lang und)],
+'langSet' 			=> [qw(look)],
+'tig' 				=> [qw(look missing)],
+'descripGrp' 		=> [qw(look kill)],                	   
+'transacGrp' 		=> [qw(look type transactionType modification)],
+'martif' 			=> [qw(seek text)],
+'martifHeader' 		=> [qw(seek)],
+'fileDesc' 			=> [qw(look)],
+'titleStmt' 		=> ["seek","Made by Steamroller Version $version."],
+'publicationStmt' 	=> ["look","Made by Steamroller Version $version."],
+'sourceDesc' 		=> ["look","Made by Steamroller Version $version."],
+'encodingDesc' 		=> [qw(look type XCSURI TBXBasicXCSV02.xcs)],
+'revisionDesc' 		=> [qw(look change)],
+'change' 			=> ["look","Added by Steamroller Version $version."], 
+'text' 				=> [qw(seek)],
+'back' 				=> [qw(look type respPerson)],
+'refObjectList' 	=> [qw(look id Steamroller)],
+'refObject' 		=> [qw(look type fn),"Steamroller Version $version."],
+);
+
 #intelligently stores disallowed data in a safe location nearby
 sub dump_truck {
 	#value is optional,used for atts
@@ -481,6 +535,7 @@ sub log_init {
 		'text'		=> '', #has to be retrieved later
 		't_fate'	=> 0,
 		'atts' 		=> {}, #populated in while statement
+		'other'		=> [], #stores changes that don't correspond to existing data
 	};
 	
 	while (my ($att,$val) = each $section->atts()) 
@@ -758,6 +813,67 @@ sub dca_check {
 	
 }
 
+sub child_check {
+	my ($t, $section, $child, $log) = @_;
+	my $cname = $child->name();
+	if (my $req = $req_kids{$cname}) {
+		foreach my $kname (@{$req}) {
+			unless ($child->has_child($kname)) {
+				my @to_do = @{$adopt{$cname}};
+				my $kid = XML::Twig::Elt->new($kname);
+				print "$cname\n";
+				while (my $action = shift @to_do) {
+					if ($action eq 'seek') {
+						print "Looking everywhere for $kname\n";
+					}
+					elsif ($action eq 'look') {
+						print "Looking below for $kname\n";
+					}
+					elsif ($action eq 'kill') {
+						#decompose the att and return from subroutine
+						print "Deleting $cname\n";
+						$child->erase();
+						$log->{$child}{'n_code'} = "NOKID";
+						$log->{$child}{'n_fate'} = $kname;
+						#perhaps run through eraser when one is made
+					}
+					elsif (grep {$action eq $_} @{$atts{$kname}}) {
+						my $val = shift @to_do;
+						print "$kname gets att $action = $val\n";
+						$kid->set_att($action=>$val);
+						#attach it to $kid
+					}
+					else 
+					{
+						#$action is pcdata to $kid
+						print "$kname gets text $action\n";
+						$kid->set_text($action);
+					}
+				}
+				$kid->paste(first_child=>$child);
+				#print ref $log->{$child}{'other'};
+				print "\n";
+			}
+		}
+	}
+	return 1;
+}
+
+sub order_check {
+	my ($t, $section, $log) = @_;
+	
+	my @children = ($section);
+	my $child;
+	
+	while ($child = shift @children) {
+		my $cname = $child->name();
+		child_check($t, $section,$child,$log);
+		
+		push @children, $child->children();
+	}
+	
+}
+
 sub term_log_init {
 	my ($t,$section) = @_;
 	#passes reference for %term_log to &log_init
@@ -827,7 +943,7 @@ sub order_term {
 	my ($t,$section) = @_;
 	
 	handle_term(@_);
-	
+	order_check(@_,\%term_log);
 	#print the log for term entries
 	print_log(%term_log);
 	
@@ -910,6 +1026,7 @@ sub order_root {
 	my ($t,$section) = @_;
 	
 	handle_aux(@_);
+	order_check(@_,\%aux_log);
 	return 1;
 }
 
@@ -932,9 +1049,9 @@ sub print_log {
 			$log{$section}->{'parent'} ? $log{$section}->{'parent'} : 'root';
 		}
 		
-		if (my $fate = $log{$section}->{'n_code'}) {
+		if (my $code = $log{$section}->{'n_code'}) {
 			
-			if ($fate eq 'BADCAT') {
+			if ($code eq 'BADCAT') {
 				my $x;
 				$i .= sprintf "%s had bad data category%s. Stored as %s.\n",
 				$log{$section}->{'name'},
@@ -942,17 +1059,17 @@ sub print_log {
 				$log{$section}->{'n_fate'};
 			}
 			
-			elsif ($fate eq 'INVALID') {
+			elsif ($code eq 'INVALID') {
 				$i .= sprintf "%s had invalid name. Stored as %s.\n",
 				$log{$section}->{'name'},$log{$section}->{'n_fate'};
 			}
 			
-			elsif ($fate eq 'RENAME') {
+			elsif ($code eq 'RENAME') {
 				$i .= sprintf "%s had invalid name, renamed %s.\n",
 				$log{$section}->{'name'},$log{$section}->{'n_fate'};
 			}
 			
-			elsif ($fate eq 'MISMATCH') {
+			elsif ($code eq 'MISMATCH') {
 				my $x = $log{$section}{'atts'}{'type'}{'v_fate'} ?
 				$log{$section}{'atts'}{'type'}{'v_fate'} : 
 				$log{$section}{'atts'}{'type'}{'val'};
@@ -961,6 +1078,15 @@ sub print_log {
 				$log{$section}->{'name'},
 				$x ? " '$x'" : '',
 				$log{$section}->{'n_fate'};
+			}
+			elsif ($code eq 'NOKID') {
+				$i .= sprintf "%s was missing child '%s', removed.\n",
+				$log{$section}->{'name'},$log{$section}->{'n_fate'}
+			}
+			else
+			{
+				$i .= sprintf "%s had error $code\n",
+				$log{$section}->{'name'},;
 			}
 			
 		}
