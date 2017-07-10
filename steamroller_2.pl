@@ -10,15 +10,14 @@ use String::Similarity;
 
 #configures lower bound of guess validity
 #lower tolerance makes bolder guesses, more mistakes
-my $tolerance = 0.9;
+my $g_t = 0.9;
 
 #version 2.30 starts to implement order checking
 #this version enforces minimal children requirements
 #currently creates missing children, but won't try to find them
-#also doesn't log the creation of these children, 
-#just uploading before I break something
+#logs created children
 
-my $version = 2.30;
+my $version = 2.31;
 
 #changes behaviour if true, used for coding purposes
 my $dev = 1;
@@ -835,6 +834,7 @@ sub child_check {
 						$child->erase();
 						$log->{$child}{'n_code'} = "NOKID";
 						$log->{$child}{'n_fate'} = $kname;
+						return 1;
 						#perhaps run through eraser when one is made
 					}
 					elsif (grep {$action eq $_} @{$atts{$kname}}) {
@@ -851,7 +851,13 @@ sub child_check {
 					}
 				}
 				$kid->paste(first_child=>$child);
-				#print ref $log->{$child}{'other'};
+				my $entry = $kid;
+				do {
+					$entry = $entry->parent();
+				} until (defined $log->{$entry});
+				#print '---',$kname, ' ',$entry->name(),'|',$log->{$entry}{'other'};
+				push $log->{$entry}{'other'}, 
+				$entry == $child? "MISSING" : "CREATED", $kid, $child;
 				print "\n";
 			}
 		}
@@ -1126,6 +1132,23 @@ sub print_log {
 				}
 			}
 			
+		}
+		;
+		my @others = @{$log{$section}{'other'}};
+		while (my $code = shift @others) {
+			if ($code eq "MISSING") {
+				my $kid = shift @others;
+				my $parent = shift @others;
+				$i .= sprintf "Required Element %s missing from %s, ".
+				"created and added.\n",
+				$kid->name(),$parent->name();
+			}
+			elsif ($code eq "CREATED") {
+				my $kid = shift @others;
+				my $parent = shift @others;
+				$i .= sprintf "Required element %s added to new %s.\n",
+				$kid->name(),$parent->name();
+			}
 		}
 	
 		if ($log{$section}->{'text'}) 
