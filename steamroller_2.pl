@@ -12,8 +12,7 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.33; #implements child requirements
-#will find or make a suitable child according to instructs in %adopt
+my $version = 2.331; #fix a quick bug where the att guesser overrides existing atts
 
 
 #changes behaviour if true, used for coding purposes
@@ -565,15 +564,10 @@ sub autocorrect {
 	(reverse sort {$relevance{$a} <=> $relevance{$b}} @{$prefer}),
 	(reverse sort {$relevance{$a} <=> $relevance{$b}} @{$option}));
 	
-   #foreach my $guess (@j) {
-   #	print $relevance{$guess},' ',$guess,' ',$target,' ',"\n";
-   #}
-   
-	
 	foreach my $guess (@j) 
 	
 	{
-		#print "$target $guess ",$relevance{$guess},"\n";
+		
 		if ($relevance{$guess}>$tolerance and eval($condition))
 		{
 			return $guess;
@@ -628,9 +622,9 @@ sub att_check {
 		
 		return 1;
 	}
-	
-	if (my $guess = autocorrect($att,$atts{$cname},[])) {
-		
+	print join(' ',keys $section->atts()),"\n";
+	if (my $guess = autocorrect($att,$atts{$cname},[],$g_t,
+		'not $_[5]->has_att($guess)',$section)) {
 		$section->change_att_name($att,$guess);
 		
 		#log the att if it was there originally
@@ -784,7 +778,6 @@ sub dca_check {
 	return 1 unless my $value = $section->att('type');
 	
 	my $cname = $section->name();
-	#printf "Name %s Value %s\n",$cname, $value;
 	
 	if (grep {$value eq $_} keys %datcats) {
 		
@@ -818,7 +811,6 @@ sub dca_check {
 		
 	}
 	
-	#printf "!!Name %s Value %s\n",$cname, $value;
 	
 	return 0;
 	
@@ -835,11 +827,7 @@ sub child_check {
 				#print "$cname\n";
 				while (my $action = shift @to_do) {
 					if ($action eq 'seek') {
-						print "Looking everywhere for $kname\n";
-						foreach my $x ($section->descendants()) 
-						{
-							print $x->name(),"\n";
-						}
+						
 						if (my $oliver = $section->first_descendant($kname)) 
 						{
 							
@@ -860,11 +848,7 @@ sub child_check {
 					elsif ($action eq 'look') 
 					
 					{
-						print "Looking down for $kname\n";
-						#foreach my $x ($child->descendants()) 
-						#{
-						#	print $x->name(),"\n";
-						#}
+						
 						if (my $oliver = $child->first_descendant($kname)) 
 						{
 							
@@ -883,7 +867,6 @@ sub child_check {
 					}
 					elsif ($action eq 'kill') {
 						#decompose the att and return from subroutine
-						print "Deleting $cname\n";
 						$child->erase();
 						$log->{$child}{'n_code'} = "NOKID";
 						$log->{$child}{'n_fate'} = $kname;
@@ -892,14 +875,12 @@ sub child_check {
 					}
 					elsif (grep {$action eq $_} @{$atts{$kname}}) {
 						my $val = shift @to_do;
-						print "$kname gets att $action = $val\n";
 						$kid->set_att($action=>$val);
 						#attach it to $kid
 					}
 					else 
 					{
 						#$action is pcdata to $kid
-						print "$kname gets text $action\n";
 						$kid->set_text($action);
 					}
 				}
@@ -908,10 +889,9 @@ sub child_check {
 				do {
 					$entry = $entry->parent();
 				} until (defined $log->{$entry});
-				#print '---',$kname, ' ',$entry->name(),'|',$log->{$entry}{'other'};
 				push $log->{$entry}{'other'}, 
 				$entry == $child? "MISSING" : "CREATED", $kid, $child;
-				#print "\n";
+
 			}
 		}
 	}
@@ -1099,7 +1079,7 @@ sub print_log {
 	{
 		#declare item to output for section at hand
 		my $i = '';
-		#print $log{$section}->{'name'},"\n";
+		
 		if ($verbose) 
 		{
 			$i .= sprintf "%s of line %d was child of %s.\n",
