@@ -10,14 +10,11 @@ use String::Similarity;
 
 #configures lower bound of guess validity
 #lower tolerance makes bolder guesses, more mistakes
-my $g_t = 0.9;
+my $g_t = $ARGV[1] // 0.4;
 
-#version 2.30 starts to implement order checking
-#this version enforces minimal children requirements
-#currently creates missing children, but won't try to find them
-#logs created children
-
-my $version = 2.31;
+my $version = 2.32; #starts to implement order checking
+#misc bug fixes: implements rudimentary tolerance control
+#				 fixes a bug causing bad value guesses 
 
 #changes behaviour if true, used for coding purposes
 my $dev = 1;
@@ -322,6 +319,7 @@ my %datcats = (
 
 #guess from these if value invalid, to avoid spurrious 'color' elements
 my @datguess = (
+'TBX-Basic'					,
 'administrativeStatus'		,
 'geographicalUsage'			,
 'grammaticalGender'			,
@@ -557,16 +555,24 @@ sub autocorrect {
 	#optional condition for special circumstances, pass true to ignore
 	my ($target,$prefer,$option,$tolerance,$condition) = @_;
 	
+	$tolerance //= $g_t;
+	$condition //= 1;
+	#print "@_ tolerance $tolerance condition $condition\n";
 	my %relevance = map {$_ => similarity lc $target, lc $_} (@{$prefer},@{$option});
 	
 	my @j = (
 	(reverse sort {$relevance{$a} <=> $relevance{$b}} @{$prefer}),
 	(reverse sort {$relevance{$a} <=> $relevance{$b}} @{$option}));
 	
+   #foreach my $guess (@j) {
+   #	print $relevance{$guess},' ',$guess,' ',$target,' ',"\n";
+   #}
+   
+	
 	foreach my $guess (@j) 
 	
 	{
-		
+		#print "$target $guess ",$relevance{$guess},"\n";
 		if ($relevance{$guess}>$tolerance and eval($condition))
 		{
 			return $guess;
@@ -594,8 +600,8 @@ sub name_check {
 		}
 	}
 	
-	if (my $guess = autocorrect($cname,$comp{$pname},[keys %refs],.5,
-	'ref($refs{$guess}) ne "REF"'))
+	if (my $guess = autocorrect($cname,$comp{$pname},[keys %refs],
+	$g_t,'ref($refs{$guess}) ne "REF"'))
 	
 	{
 		$section->set_name($guess);
@@ -622,7 +628,7 @@ sub att_check {
 		return 1;
 	}
 	
-	if (my $guess = autocorrect($att,$atts{$cname},[],.5,1)) {
+	if (my $guess = autocorrect($att,$atts{$cname},[])) {
 		
 		$section->change_att_name($att,$guess);
 		
@@ -787,7 +793,12 @@ sub dca_check {
 		
 	}
 	
-	if (my $guess = autocorrect($value,\@datguess,[],.5,1)) {
+	#temporary storage for preferred guesses to pass to autocorrect
+	my @prefer = grep {$datcats{$_} eq $cname} keys %datcats;
+	
+	
+	if (my $guess = autocorrect($value,\@prefer,\@datguess)) 
+	{
 		
 		#printf "Name %s Value %s Guess %s\n",$cname, $value, $guess;
 		
@@ -820,17 +831,17 @@ sub child_check {
 			unless ($child->has_child($kname)) {
 				my @to_do = @{$adopt{$cname}};
 				my $kid = XML::Twig::Elt->new($kname);
-				print "$cname\n";
+				#print "$cname\n";
 				while (my $action = shift @to_do) {
 					if ($action eq 'seek') {
-						print "Looking everywhere for $kname\n";
+						#print "Looking everywhere for $kname\n";
 					}
 					elsif ($action eq 'look') {
-						print "Looking below for $kname\n";
+						#print "Looking below for $kname\n";
 					}
 					elsif ($action eq 'kill') {
 						#decompose the att and return from subroutine
-						print "Deleting $cname\n";
+						#print "Deleting $cname\n";
 						$child->erase();
 						$log->{$child}{'n_code'} = "NOKID";
 						$log->{$child}{'n_fate'} = $kname;
@@ -839,14 +850,14 @@ sub child_check {
 					}
 					elsif (grep {$action eq $_} @{$atts{$kname}}) {
 						my $val = shift @to_do;
-						print "$kname gets att $action = $val\n";
+						#print "$kname gets att $action = $val\n";
 						$kid->set_att($action=>$val);
 						#attach it to $kid
 					}
 					else 
 					{
 						#$action is pcdata to $kid
-						print "$kname gets text $action\n";
+						#print "$kname gets text $action\n";
 						$kid->set_text($action);
 					}
 				}
@@ -858,7 +869,7 @@ sub child_check {
 				#print '---',$kname, ' ',$entry->name(),'|',$log->{$entry}{'other'};
 				push $log->{$entry}{'other'}, 
 				$entry == $child? "MISSING" : "CREATED", $kid, $child;
-				print "\n";
+				#print "\n";
 			}
 		}
 	}
