@@ -12,9 +12,9 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.32; #starts to implement order checking
-#misc bug fixes: implements rudimentary tolerance control
-#				 fixes a bug causing bad value guesses 
+my $version = 2.33; #implements child requirements
+#will find or make a suitable child according to instructs in %adopt
+
 
 #changes behaviour if true, used for coding purposes
 my $dev = 1;
@@ -400,7 +400,7 @@ my %adopt = (
 'tig' 				=> [qw(look missing)],
 'descripGrp' 		=> [qw(look kill)],                	   
 'transacGrp' 		=> [qw(look type transactionType modification)],
-'martif' 			=> [qw(seek text)],
+'martif' 			=> [qw(seek)], #text was in there spurriously?
 'martifHeader' 		=> [qw(seek)],
 'fileDesc' 			=> [qw(look)],
 'titleStmt' 		=> ["seek","Made by Steamroller Version $version."],
@@ -528,6 +528,7 @@ sub log_init {
 		'n_code'	=> 0,
 		'line' 		=> $t->current_line(),
 		'parent'	=> $section->level()>0 ? $section->parent()->name() : 0,
+		'p_code'	=> 0,
 		'p_fate'	=> 0,
 		'text'		=> '', #has to be retrieved later
 		't_fate'	=> 0,
@@ -834,14 +835,55 @@ sub child_check {
 				#print "$cname\n";
 				while (my $action = shift @to_do) {
 					if ($action eq 'seek') {
-						#print "Looking everywhere for $kname\n";
+						print "Looking everywhere for $kname\n";
+						foreach my $x ($section->descendants()) 
+						{
+							print $x->name(),"\n";
+						}
+						if (my $oliver = $section->first_descendant($kname)) 
+						{
+							
+							
+							if (defined $log->{$oliver}) {
+								$log->{$oliver}{'p_code'} = "FOUND";
+								$log->{$oliver}{'p_fate'} = $cname;
+							}
+							
+							push $log->{$child}{'other'},
+							grep ($_ == $oliver,$child->descendants()) ?
+							"FOUND":"SOUGHT", 
+							$oliver,$oliver->parent();
+							$oliver->move(first_child=>$child);
+							return 1;
+						} 
 					}
-					elsif ($action eq 'look') {
-						#print "Looking below for $kname\n";
+					elsif ($action eq 'look') 
+					
+					{
+						print "Looking down for $kname\n";
+						#foreach my $x ($child->descendants()) 
+						#{
+						#	print $x->name(),"\n";
+						#}
+						if (my $oliver = $child->first_descendant($kname)) 
+						{
+							
+							
+							if (defined $log->{$oliver}) {
+								$log->{$oliver}{'p_code'} = "FOUND";
+								$log->{$oliver}{'p_fate'} = $cname;
+							}
+							
+							push $log->{$child}{'other'},"FOUND", 
+							$oliver,$oliver->parent();
+							$oliver->move(first_child=>$child);
+							return 1;
+						} 
+					
 					}
 					elsif ($action eq 'kill') {
 						#decompose the att and return from subroutine
-						#print "Deleting $cname\n";
+						print "Deleting $cname\n";
 						$child->erase();
 						$log->{$child}{'n_code'} = "NOKID";
 						$log->{$child}{'n_fate'} = $kname;
@@ -850,14 +892,14 @@ sub child_check {
 					}
 					elsif (grep {$action eq $_} @{$atts{$kname}}) {
 						my $val = shift @to_do;
-						#print "$kname gets att $action = $val\n";
+						print "$kname gets att $action = $val\n";
 						$kid->set_att($action=>$val);
 						#attach it to $kid
 					}
 					else 
 					{
 						#$action is pcdata to $kid
-						#print "$kname gets text $action\n";
+						print "$kname gets text $action\n";
 						$kid->set_text($action);
 					}
 				}
@@ -1144,7 +1186,26 @@ sub print_log {
 			}
 			
 		}
-		;
+		
+		if (my $code = $log{$section}->{'p_code'}) {
+			
+			if ($code eq 'FOUND') {
+				
+				$i .= sprintf "%s moved from %s to fulfill requirements of %s.\n",
+				$log{$section}->{'name'},
+				$log{$section}->{'parent'},
+				$log{$section}->{'p_fate'},
+			}
+			
+			
+			else
+			{
+				$i .= sprintf "%s had error $code\n",
+				$log{$section}->{'name'},;
+			}
+			
+		}
+		
 		my @others = @{$log{$section}{'other'}};
 		while (my $code = shift @others) {
 			if ($code eq "MISSING") {
@@ -1159,6 +1220,23 @@ sub print_log {
 				my $parent = shift @others;
 				$i .= sprintf "Required element %s added to new %s.\n",
 				$kid->name(),$parent->name();
+			}
+			elsif ($code eq "FOUND") {
+				my $kid = shift @others;
+				my $parent = shift @others;
+				$i .= sprintf "Required element %s taken from child node %s%s.\n",
+				$kid->name(),$parent->name(),
+				defined $log{$parent}{'line'} ? " on line ".$log{$parent}{'line'} : '' ;
+			}
+			elsif ($code eq "SOUGHT") {
+				my $kid = shift @others;
+				my $parent = shift @others;
+				$i .= sprintf "Required element %s found in node %s%s.\n",
+				$kid->name(),$parent->name(),
+				defined $log{$parent}{'line'} ? " on line ".$log{$parent}{'line'} : '' ;
+			}
+			else {
+				$i.= sprintf "Error code $code.\n";
 			}
 		}
 	
