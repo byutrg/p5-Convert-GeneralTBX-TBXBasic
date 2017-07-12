@@ -12,7 +12,7 @@ att_check
 order_check
 	term made into note, bad: instead, more robust fate hash?
 	PCDATA content check for DCA, date here (after all is ordered)
-	hash to enforce minimal structure
+v	hash to enforce minimal structure
 	home-finding algorithm
 	sort within element with twig's sorter called on all descendents instead of manually
 

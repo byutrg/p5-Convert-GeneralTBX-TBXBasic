@@ -12,8 +12,9 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.331; #fix a quick bug where the att guesser overrides existing atts
-
+my $version = 2.34; #changes behaviour relative to illegal duplicates
+#removed %refs and store() functionality!!! no more refs for elements
+#see 2.33 for how it worked
 
 #changes behaviour if true, used for coding purposes
 my $dev = 1;
@@ -31,106 +32,20 @@ open (my $lf,'>','log_steamroller.txt');
 my %aux_log;
 my %term_log;
 
-#initialize variables which store elements as they are encountered, used later for rearrangement
-my(
-$martif,
-$martifHeader,
-$fileDesc,
-@p,
-$titleStmt,
-$title,
-@note,
-$publicationStmt,
-@sourceDesc,
-$encodingDesc,
-$revisionDesc,
-@change,
-@pcdata,
-$text,
-$body,
-$back,
-@refObjectList,
-@refObject,
-@item,
-$placeholder,
-@termEntry,
-@langSet,
-@tig,
-@term,
-@termNote,
-@descrip,
-@descripGrp,
-@admin,
-@transacGrp,
-@ref,
-@xref,
-@transac,
-@transacNote,
-@date,
-@hi,
-@foreign,
-@bpt,
-@ept,
-@ph,
-);
-
-#hash of element names to the reference for their corresponding variable
-my %refs=(
-'martif' => \$martif,
-'martifHeader' => \$martifHeader,
-'fileDesc' => \$fileDesc,
-'p' =>\@p, 
-'titleStmt' => \$titleStmt,
-'title' => \$title,
-'note' => \@note,
-'publicationStmt' => \$publicationStmt,
-'sourceDesc' => \@sourceDesc,
-'encodingDesc' => \$encodingDesc,
-'revisionDesc' => \$revisionDesc,
-'change' => \@change,
-'#PCDATA' => \@pcdata,
-'text' => \$text,
-'body' => \$body,
-'back' => \$back,
-'refObjectList' => \@refObjectList,
-'refObject' => \@refObject,
-'item' => \@item,
-'placeholder' => \$placeholder,
-'termEntry' => \@termEntry,
-'langSet' => \@langSet,
-'tig' => \@tig,
-'term' => \@term,
-'termNote' => \@termNote,
-'descrip' => \@descrip,
-'descripGrp' => \@descripGrp,
-'admin' => \@admin,
-'transacGrp' => \@transacGrp,
-'ref' => \@ref,
-'xref' => \@xref,
-'transac' => \@transac,
-'transacNote' => \@transacNote,
-'date' => \@date,
-'hi' => \@hi,
-'foreign' => \@foreign,
-'bpt' => \@bpt,
-'ept' => \@ept,
-'ph' => \@ph,
-);
-
 my %comp=(
 0 => ['martif'],
 'martif' => ['martifHeader','text'],
 'martifHeader' => ['fileDesc','encodingDesc','revisionDesc'],
 'fileDesc' => ['titleStmt','publicationStmt','sourceDesc'],
 'p' => ['#PCDATA'],
-'titleStmt' => ['title','note'],
-'title' => ['#PCDATA'],
-'publicationStmt' => ['p'],
-'sourceDesc' => ['p'],
-'encodingDesc' => ['p'],
-'revisionDesc' => ['change'],
-'change' =>	['p'],
-'text' => ['body','back'],
+'titleStmt' => ['title','note'],          
+'title' => ['#PCDATA'],                   
+'publicationStmt' => ['p'],               
+'sourceDesc' => ['p'],                    
+'encodingDesc' => ['p'],                  
+'revisionDesc' => ['change'],             
+'change' =>	['p'],                        
+'text' => ['body','back'],                
 'body' => ['termEntry'],
 'back' => ['refObjectList'],
 'refObjectList' => ['refObject'],
@@ -313,7 +228,7 @@ my %datcats = (
 'date'						=> 'ph',      # = Date
 'fnote'						=> 'ph',      # = Footnote
 'alt'						=> 'ph',      # = Alternate text
-'pb'						=> 'ph',      # = Page break			bpt ph types inhereted from
+'pb'						=> 'ph',      # = Page break			bpt ph types 
 );								
 
 #guess from these if value invalid, to avoid spurrious 'color' elements
@@ -477,50 +392,12 @@ sub dump_truck {
 	
 }
 
-sub store {
-	
-	my $item = $_[0];
-	
-	#Retrieves the reference to the named variable
-	my $ref=$refs{$item->name()};
-	
-	
-	if (ref($ref) eq 'ARRAY') 
-	
-	#If ARRAY, then the element may be duplicated, push reference to array
-	{
-		push @{$ref}, $item; 
-	} 
-	
-	elsif (ref($ref) eq 'SCALAR') 
-	
-	#SCALAR means the element should be unique, but is not taken yet.
-	{
-		${$ref} = $item;
-	} 
-	
-	elsif (ref($ref) eq 'REF') 
-	
-	#REF means the element's reference is filled, and must be unique.
-	#returns 0 to indicate failure to store, element will be renamed.
-	{
-		return 0;		
-	} 
-	
-	else 
-	#The element was not in the hash of refs; should never be trigged.
-	{
-		die "Unhandled type ".$item->name().' '.ref($ref)."\n";
-	}
-	
-	#Indicates success, triggered when ref was ARRAY or SCALAR
-	return 1;
-	
-}
-
 sub log_init {
 	my ($t,$section,$log) = @_;
 	#uses the Elt hash ref as the key
+	
+	print $section->name(),"\n";
+	
 	$log->{$section} = {
 		'name' 		=> $section->name(),
 		'n_fate'	=> 0,
@@ -586,21 +463,14 @@ sub name_check {
 	my $cname = $section->name();
 	my $pname = $section->level()>0 ? $section->parent()->name() : 0;
 	
-	if (grep {$cname eq $_} keys %comp)
+	return 1 if grep {$cname eq $_} keys %comp;
 	
-	{
-		if (store($section))
-		{
-			return 1;
-		}
-	}
 	
-	if (my $guess = autocorrect($cname,$comp{$pname},[keys %refs],
-	$g_t,'ref($refs{$guess}) ne "REF"'))
+	if (my $guess = autocorrect($cname,$comp{$pname},[keys %comp],
+	$g_t)) #special condition removed
 	
 	{
 		$section->set_name($guess);
-		store($section);
 		
 		$log->{$section}{'n_fate'} = $guess;
 		$log->{$section}{'n_code'} = "RENAME";
