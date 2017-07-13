@@ -12,9 +12,9 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.34; #identifies duplicate and misplaced elements
+my $version = 2.341; #identifies duplicate and misplaced elements
+#slight improvement to sib_check and place_check, for use in relocator
 
-#changes behaviour if true, used for coding purposes
 my $dev = 1;
 my $verbose = 0;
 
@@ -822,21 +822,27 @@ sub child_check {
 
 sub place_check {
 	
+	#both arguments are elements; provide $target to test validity of a move
 	my ($child,$target) = @_;
-	#will need to implement $target too for use 
+	#will need to implement $target too for use
+	
+	return 0 unless $target //= $child->parent();
+	#hence call either provided $target, or $child has parent
+	
 	my $cname;
-	if ($child->name() eq 'descrip' and $child->parent()->name() ne 'descripGrp') {
+	if ($child->name() eq 'descrip' and $target->name() ne 'descripGrp') {
 		$cname = $child->att('type') // $child->name(); #this default should not trigger
 	}
 	elsif ($child->name() eq 'descripGrp') {
 		$cname = $child->first_child('descrip')->att('type') // $child->name(); #ditto
 	}
 	$cname //= $child->name();
-	my $pname = $child->parent() ? $child->parent()->name() : '';
 	
-	print $child->name(),"\t",$cname,"\t",$pname,"\n";
+	my $tname = $target->name();
 	
-	unless (grep {$pname eq $_} @{$renp{$cname}}) {
+	print $child->name(),"\t",$cname,"\t",$tname,"\n";
+	
+	unless (grep {$tname eq $_} @{$renp{$cname}}) {
 		return "MISPLACED";
 	}
 			
@@ -859,13 +865,13 @@ sub sib_check {
 	if ($target) 
 	#check children of potential target
 	{
-		return 1;
+		return "DUPLICATE" if $target->has_children($cname);
 	}
 	
 	else
 	#check siblings of the child
 	{
-		return "DUPLICATE" if $child->prev_sibling($child->name());
+		return "DUPLICATE" if $child->prev_sibling($cname);
 	}
 	
 	return 0; #return 0 is passing, means no error code
@@ -874,6 +880,8 @@ sub sib_check {
 sub relocate {
 	#maybe better just inside order_check
 	#placeholder for now
+	
+	my ($section,$child,$log) = @_;
 }
 
 sub order_check {
@@ -890,7 +898,7 @@ sub order_check {
 		
 		{
 			print "-----$code!!!!!\n";
-			relocate();
+			relocate($section,$child,$log);
 		}
 		
 		
