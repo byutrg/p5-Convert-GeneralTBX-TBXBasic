@@ -12,9 +12,7 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.34; #changes behaviour relative to illegal duplicates
-#removed %refs and store() functionality!!! no more refs for elements
-#see 2.33 for how it worked
+my $version = 2.34; #identifies duplicate and misplaced elements
 
 #changes behaviour if true, used for coding purposes
 my $dev = 1;
@@ -329,6 +327,60 @@ my %adopt = (
 'refObject' 		=> [qw(look type fn),"Steamroller Version $version."],
 );
 
+my @unique = 
+('#PCDATA','transac','martifHeader','text','fileDesc','title','body','descrip');
+
+my %renp=(
+'martif'			=> [''],
+'martifHeader'    	=> ['martif'],
+'text'            	=> ['martif'],
+'fileDesc'        	=> ['martifHeader'],
+'encodingDesc'    	=> ['martifHeader'],
+'revisionDesc'    	=> ['martifHeader'],
+'titleStmt'       	=> ['fileDesc'],
+'publicationStmt' 	=> ['fileDesc'],
+'sourceDesc'      	=> ['fileDesc'],
+'title'           	=> ['titleStmt'],
+'note'            	=> ['titleStmt'],
+'change'          	=> ['revisionDesc'],
+'p'               	=> ['publicationStmt','sourceDesc','encodingDesc','change'],
+'#PCDATA'         	=> ['title','note','p','item'],
+'body'            	=> ['text'],
+'back'            	=> ['text'],
+'termEntry'       	=> ['body'],
+'placeholder'     	=> ['body'],
+'refObjectList'   	=> ['back'],
+'refObject'       	=> ['refObjectList'],
+'item'            	=> ['refObject'],
+'termEntry' 	  	=> [''],
+'langSet' 		  	=> [qw(termEntry)],
+'tig' 			  	=> [qw(langSet)],
+'term' 			  	=> [qw(tig)],
+'termNote' 		  	=> [qw(tig)],
+                  	
+'descrip' 		  	=> [qw(termEntry langSet tig descripGrp)],
+'context'         	=> [qw(tig)],
+'definition'      	=> [qw(langSet termEntry)],
+'subjectField'    	=> [qw(termEntry)],                  	
+'descripGrp' 	  	=> [qw(termEntry langSet tig)],
+
+'admin' 		  	=> [qw(termEntry langSet tig descripGrp)],
+'transacGrp' 	  	=> [qw(termEntry langSet tig)],
+'note' 			  	=> [qw(termEntry langSet tig titleStmt)],
+'ref' 			  	=> [qw(termEntry langSet tig)],
+'xref' 			  	=> [qw(termEntry langSet tig)],
+'transac' 		  	=> [qw(termEntry langSet tig transacGrp)],
+'transacNote' 	  	=> [qw(transacGrp)],
+'date' 			  	=> [qw(transacGrp)],
+'hi' 			  	=> [qw(term termNote descrip admin note transac transacNote foreign)],
+'foreign' 		  	=> [qw(termNote descrip admin note transac transacNote foreign)],
+'bpt' 			  	=> [qw(termNote descrip admin note transac transacNote foreign)],
+'ept' 			  	=> [qw(termNote descrip admin note transac transacNote foreign)],
+'ph' 			  	=> [qw(termNote descrip admin note transac transacNote foreign)],
+'#PCDATA' 		  	=> [qw(term termNote descrip admin note ref
+					xref transac transacNote date hi foreign bpt ept ph p item)],
+);
+
 #intelligently stores disallowed data in a safe location nearby
 sub dump_truck {
 	#value is optional,used for atts
@@ -396,7 +448,7 @@ sub log_init {
 	my ($t,$section,$log) = @_;
 	#uses the Elt hash ref as the key
 	
-	print $section->name(),"\n";
+	#print $section->name(),"\n";
 	
 	$log->{$section} = {
 		'name' 		=> $section->name(),
@@ -768,6 +820,62 @@ sub child_check {
 	return 1;
 }
 
+sub place_check {
+	
+	my ($child,$target) = @_;
+	#will need to implement $target too for use 
+	my $cname;
+	if ($child->name() eq 'descrip' and $child->parent()->name() ne 'descripGrp') {
+		$cname = $child->att('type') // $child->name(); #this default should not trigger
+	}
+	elsif ($child->name() eq 'descripGrp') {
+		$cname = $child->first_child('descrip')->att('type') // $child->name(); #ditto
+	}
+	$cname //= $child->name();
+	my $pname = $child->parent() ? $child->parent()->name() : '';
+	
+	print $child->name(),"\t",$cname,"\t",$pname,"\n";
+	
+	unless (grep {$pname eq $_} @{$renp{$cname}}) {
+		return "MISPLACED";
+	}
+			
+	return 0; #return 0 is passing, means no error code
+}
+
+sub sib_check {
+	
+	my ($child,$target) = @_;
+	
+	#return 0 unless $child needs to be unique
+	my $cname = $child->name();
+	return 0 unless (grep {$cname eq $_} @unique);
+	
+	if ($cname eq 'descrip') {
+		return 0 if $child->parent()->name() ne 'descripGrp';
+	}
+	
+	#print "-=--=-=-=-=-=-=-$cname\n";
+	if ($target) 
+	#check children of potential target
+	{
+		return 1;
+	}
+	
+	else
+	#check siblings of the child
+	{
+		return "DUPLICATE" if $child->prev_sibling($child->name());
+	}
+	
+	return 0; #return 0 is passing, means no error code
+}
+
+sub relocate {
+	#maybe better just inside order_check
+	#placeholder for now
+}
+
 sub order_check {
 	my ($t, $section, $log) = @_;
 	
@@ -777,6 +885,15 @@ sub order_check {
 	while ($child = shift @children) {
 		my $cname = $child->name();
 		child_check($t, $section,$child,$log);
+		
+		if (my $code = place_check($child) || sib_check($child)) 
+		
+		{
+			print "-----$code!!!!!\n";
+			relocate();
+		}
+		
+		
 		
 		push @children, $child->children();
 	}
@@ -850,7 +967,7 @@ sub handle_term {
 
 sub order_term {
 	my ($t,$section) = @_;
-	
+	$section->cut();
 	handle_term(@_);
 	order_check(@_,\%term_log);
 	#print the log for term entries

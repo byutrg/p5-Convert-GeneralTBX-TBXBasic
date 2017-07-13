@@ -14,14 +14,18 @@
     <body>
       <termEntry id="c1">
         <descrip type="subjectField">manufacturing</descrip>
+		<descrip type="definition">what</descrip>
         <descripGrp>
-          <descrip type="definition">This is a sample definition at the entry level.</descrip>
+			<descrip type="definition">This is a sample definition too.</descrip>
+		  <descrip type="definition">This is a sample definition at the entry level.</descrip>
           <admin type="source">Terminology SIG</admin>
         </descripGrp>
         <transacGrp>
           <transac type="transactionType">origination</transac>
+		  <transac type="transactionType">modification</transac>
           <transacNote target="US5001" type="responsibility">Jane</transacNote>
-          <date>2007-07-22</date>
+          <term>not here</term>
+		  <date>2007-07-22</date>
         </transacGrp>
         <transacGrp>
           <transac type="transactionType">modification</transac>
@@ -35,7 +39,9 @@
         <langSet xml:lang="en">
           <tig>
             <term>scheduled operation</term>
-            <termNote type="partOfSpeech">preposition</termNote>
+            <termNote type="partOfSpeech">
+				<term>preposition</term>
+			</termNote>
             <termNote type="termType">fullForm</termNote>
             <termNote type="grammaticalGender">masculine</termNote>
             <termNote type="administrativeStatus">preferredTerm-admn-sts</termNote>
