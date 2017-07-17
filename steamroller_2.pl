@@ -12,8 +12,8 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.341; #identifies duplicate and misplaced elements
-#slight improvement to sib_check and place_check, for use in relocator
+my $version = 2.35; #rewrites the dump_truck subroutine
+#it was causing problems
 
 my $dev = 1;
 my $verbose = 0;
@@ -372,75 +372,102 @@ my %renp=(
 'transac' 		  	=> [qw(termEntry langSet tig transacGrp)],
 'transacNote' 	  	=> [qw(transacGrp)],
 'date' 			  	=> [qw(transacGrp)],
-'hi' 			  	=> [qw(term termNote descrip admin note transac transacNote foreign)],
-'foreign' 		  	=> [qw(termNote descrip admin note transac transacNote foreign)],
-'bpt' 			  	=> [qw(termNote descrip admin note transac transacNote foreign)],
-'ept' 			  	=> [qw(termNote descrip admin note transac transacNote foreign)],
-'ph' 			  	=> [qw(termNote descrip admin note transac transacNote foreign)],
-'#PCDATA' 		  	=> [qw(term termNote descrip admin note ref
+'hi' 			  	=> [qw(p term termNote descrip admin
+	 						note transac transacNote foreign)],
+'foreign' 		  	=> [qw(p termNote descrip admin note transac transacNote foreign)],
+'bpt' 			  	=> [qw(p termNote descrip admin note transac transacNote foreign)],
+'ept' 			  	=> [qw(p termNote descrip admin note transac transacNote foreign)],
+'ph' 			  	=> [qw(p termNote descrip admin note transac transacNote foreign)],
+'#PCDATA' 		  	=> [qw(p term termNote descrip admin note ref
 					xref transac transacNote date hi foreign bpt ept ph p item)],
 );
 
 #intelligently stores disallowed data in a safe location nearby
 sub dump_truck {
 	#value is optional,used for atts
-	my ($t,$section,$data,$value,$is_att,$log) = @_;
-	
-	my $text = sprintf "%s%s%s%s",
+	my ($t,$section,$log,$att) = @_;
+
+	#initialize message
+	my $message = $att ?
+	sprintf "Removed att '%s' from %s%s",
+	$att, $section->name(),
+	$log->{$section} ? " (line:".$log->{$section}{'line'}.")" : "",
+	:
+	sprintf "Removed %s%s",
 	$section->name(),
-	$log->{$section} ? " (from line:".$log->{$section}{'line'}.") " : "",
-	$data,
-	$value ? "=".$value : "",;
+	$log->{$section} ? " (from line:".$log->{$section}{'line'}.")" : "",;
 	
-	#should only be called on termEntry and martif if $is_att is true
-	my $target = $is_att && defined $dump{$section->name()} ?
-	$section : $section->parent();
-	my ($fate,$position) = @{$dump{$target->name()}};
+	my ($fate,$position) = 
+	$section->level()==0		? ('sourceDesc', $att ? 'first_child' : 'root')	:
+	$att 								? @{$dump{$section->name()}} 			:
+	$dump{$section->parent()->name()}	? @{$dump{$section->parent()->name()}} 	:
+	('p','first_child');
 	
+	my $target = $section;
 	if ($fate eq 'parent') {
-		
-		$target = $target->parent();
-		($fate,$position) = @{$dump{$target->name()}};
+		($fate,$position) = @{$dump{$section->parent()->parent()->name()}};
+		$target = $section->parent();
 	}
 	
-	my $message = $fate;
+	if ($log->{$section}) {
+		if ($att) {
+			$log->{$section}{'atts'}{$att}{'code'} = "INVALID";
+			$log->{$section}{'atts'}{$att}{'a_fate'} = $fate;
+		}
+		else
+		{
+			$log->{$section}{'n_code'} = "INVALID";
+			$log->{$section}{'n_fate'} = $fate;
+		}
+	}
+	
+	unless ($att) {
+		#continue to extract data from atts
+		#write error messages
+		foreach my $a (keys $section->atts()) {
+			$message .= sprintf ", %s=%s", $a, $section->att($a);
+			if ($log->{$section}{'atts'}{$a}) {
+
+				$log->{$section}{'atts'}{$a}{'code'} = "INVALID";
+				$log->{$section}{'atts'}{$a}{'a_fate'} = $fate;
+			}
+		}
+	}
+	$message .= ": " if $section->has_children("#PCDATA") and not $att;
+	my $note = XML::Twig::Elt->new('p'=>$message);
+	
+	unless ($att) {
+		foreach my $a ($section->children()) {	
+			$a->move(last_child=>$note)        	
+			if $a->name() =~ /^(#PCDATA|hi|foreign|bpt|ept|ph)$/;   		
+		}                                     		
+	}
+	
 	
 	if ($fate eq 'sourceDesc') {
-		my $sd = XML::Twig::Elt->new($fate);
-		my $temp = XML::Twig::Elt->new('p' => $text);
-		$temp->paste($sd);
-		$sd->paste($position => $target);
-		$message = "SOURCEDESC";
+		my $temp = XML::Twig::Elt->new('sourceDesc');
+		$note->paste($temp);
+		$note = $temp;
+	}
+	else
+	{
+		$note->set_name($fate);
+		$note->set_att(type=>'source') if $fate eq 'admin';
 	}
 	
-	elsif ($fate eq 'admin') {
-		my $temp = XML::Twig::Elt->new($fate => {type => 'source'} => $text);		
-		$temp->paste($position => $target);
+	if ($position eq 'root') {
+
+		$section->move($note);
+		$t->set_root($note);
 	}
 	
 	else
 	
 	{
-		
-		my $temp = XML::Twig::Elt->new($fate => $text);
-		$temp->paste($position => $target);
-		
+		$note->paste($position=>$target);
 	}
-	
-	if ($is_att) {
-		#$log->{$section}{'atts'}{$data}[1]="INV_".$message;
-		$log->{$section}{'atts'}{$data}{'code'} = "INVALID";
-		$log->{$section}{'atts'}{$data}{'a_fate'} = $fate;
-	}
-	
-	else
-	
-	{
-		#$log->{$section}{'n_fate'}="INV_".$message;
-		$log->{$section}{'n_code'}=
-		$value ? "BADCAT" : "RENAME";
-		$log->{$section}{'n_fate'}=$fate; #for now
-	}
+
+	$att ? $section->del_att($att) : $section->erase();
 	
 }
 
@@ -544,7 +571,7 @@ sub att_check {
 		
 		return 1;
 	}
-	print join(' ',keys $section->atts()),"\n";
+#	print join(' ',keys $section->atts()),"\n";
 	if (my $guess = autocorrect($att,$atts{$cname},[],$g_t,
 		'not $_[5]->has_att($guess)',$section)) {
 		$section->change_att_name($att,$guess);
@@ -580,18 +607,7 @@ sub prereq {
 			my $att = shift @exec;
 			unless ($section->att($att)) {
 				
-				if ($section->text(no_recurse=>1)) {
-					dump_truck($t,$section,"missing attribute $att",
-					$section->text(no_recurse=>1),0,$log);
-					$section->first_child("#PCDATA")->delete();
-					#causes pretty print issues with marked up pcdata
-				}
-		
-				while (my ($a,$b) = each $section->atts()) {
-					dump_truck($t,$section,$a,$b,1,$log);
-				}
-				
-				$section->erase();
+				dump_truck($t,$section,$log);
 				
 			}
 		} 
@@ -622,21 +638,13 @@ sub prereq {
 						$log->{$section}{'atts'}{'target'}{'code'}="MISSING";
 					} else {
 						#destroy it!
-						if ($section->text(no_recurse=>1)) {
-							dump_truck($t,$section,"missing attribute $att",
-							$section->text(no_recurse=>1),0,$log);
-							$section->first_child("#PCDATA")->delete();
-							#causes pretty print issues with marked up pcdata
-						}
-		
-						while (my ($a,$b) = each $section->atts()) {
-							dump_truck($t,$section,$a,$b,1,$log);
-						}
+						dump_truck($t,$section,$log);
 					}
 				}
 				elsif ($att eq 'type') 
-				{
-					if ($section->att('target') =~ m/\.(jpg|png|gif|svg)$/) {
+				{#throws an error if there is no target...
+					if ($section->att('target') and 
+					$section->att('target') =~ m/\.(jpg|png|gif|svg)$/) {
 						$section->set_att('type'=>'xGraphic');
 						$log->{$section}{'atts'}{'type'}{'code'}="MISSING";
 						$log->{$section}{'atts'}{'type'}{'v_fate'}='xGraphic';
@@ -840,7 +848,7 @@ sub place_check {
 	
 	my $tname = $target->name();
 	
-	print $child->name(),"\t",$cname,"\t",$tname,"\n";
+#	print $child->name(),"\t",$cname,"\t",$tname,"\n";
 	
 	unless (grep {$tname eq $_} @{$renp{$cname}}) {
 		return "MISPLACED";
@@ -927,14 +935,8 @@ sub handle_term {
 	#Abandon ship! No name found, destroy element
 	{
 
-		dump_truck($t,$section,'(invalid name)','',0,\%term_log);
-		while (my ($a,$b) = each $section->atts()) {
-			dump_truck($t,$section,$a,$b,1,\%term_log);
-		}
-		
-	
-		$section->erase();
-		
+		dump_truck($t,$section,\%term_log);
+
 		return 1;
 		
 	}
@@ -943,10 +945,8 @@ sub handle_term {
 		#check that the att is TBX approved
 		unless (att_check(@_,$att,\%term_log)) 
 		{
-			dump_truck($t,$section,$att,$section->att($att),1,\%term_log);
+			dump_truck($t,$section,\%term_log,$att);
 
-			$section->del_att($att);
-			
 		}
 	}
 	
@@ -954,19 +954,7 @@ sub handle_term {
 	
 	unless (dca_check($t,$section,\%term_log)) {
 		
-		
-		if ($section->text(no_recurse=>1)) {
-			dump_truck($t,$section,'Data:',
-			$section->text(no_recurse=>1),0,\%term_log);
-			$section->first_child("#PCDATA")->delete();
-			#causes pretty print issues with marked up pcdata
-		}
-		
-		while (my ($a,$b) = each $section->atts()) {
-			dump_truck($t,$section,$a,$b,1,\%term_log);
-		}
-		
-		$section->erase();
+			dump_truck($t,$section,\%term_log,);
 		
 	}
 	
@@ -1006,24 +994,15 @@ sub handle_aux {
 	unless (name_check(@_,\%aux_log)) 
 	
 	{
-		dump_truck($t,$section,'(invalid name)','',0,\%aux_log);
-		while (my ($a,$b) = each $section->atts()) {
-			dump_truck($t,$section,$a,$b,1,\%term_log);
-		}
-		
-		$section->erase();
-		
-		
+		dump_truck($t,$section,\%aux_log);
+		return 1;
 	}
 	
 	foreach my $att (keys $section->atts()) {
 		#check that the att is TBX approved
 		unless (att_check(@_,$att,\%aux_log)) 
 		{
-			dump_truck($t,$section,$att,$section->att($att),1,\%aux_log);
-			
-			$section->del_att($att);
-			
+			dump_truck($t,$section,\%aux_log,$att);
 		}
 	}
 	prereq($t,$section,\%aux_log);
@@ -1037,17 +1016,9 @@ sub handle_aux {
 		}
 		else
 		{
-			if ($section->text(no_recurse=>1)) {
-				dump_truck($t,$section,'Data:',
-				$section->text(no_recurse=>1),0,\%aux_log);
-				$section->first_child("#PCDATA")->delete();
-				#causes pretty print issues with marked up pcdata
-			}
 			
-			while (my ($a,$b) = each $section->atts()) {
-				dump_truck($t,$section,$a,$b,1,\%aux_log);
-			}
-			$section->erase();
+			dump_truck($t,$section,\%aux_log);
+			
 		}
 		
 		
@@ -1061,6 +1032,8 @@ sub order_root {
 	
 	handle_aux(@_);
 	order_check(@_,\%aux_log);
+	
+
 	return 1;
 }
 
@@ -1280,6 +1253,7 @@ twig_handlers 		=> {
 $twig->set_id_seed('c');
 
 $twig->parsefile($file);
+#change to safeparse so that something can be written to the logfile instead
 
 #print logfile sorted by linenumber of original
 print_log(%aux_log);

@@ -31,3 +31,20 @@ logger
 	parser pre-function to check internal id
 	
 catch and handle errors!
+
+
+
+––––––––––––––––––––––––––––––––––––
+Current:
+1: Composes error note
+2: Identifies target element based on dump instructs
+3: pasts gravestone according to dump instructs
+4: writes error message to log
+DOES NOT KILL
+
+1=>dump element and atts, all in one go?
+2=>delete element from within dumptruck
+3=>cleanly handle internal text
+
+my ($t,$section,$log,$att) = @_;
+
