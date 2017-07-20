@@ -943,13 +943,14 @@ sub relocate {
 			print "Dumping in this termEntry.\n";
 		}
 		elsif ($com eq 'rise') {
-			print "Rising until valid.\n";
+			print "✓ Rising until valid.\n";
 			
 			my $target = $child;
 			
 			while ($target = $target->parent()) {
 #				print "-Checking ",$target->name(), "\n";
-				unless (place_check($child,$target) || sib_check($child,$target)) {
+				unless (place_check($child,$target) || sib_check($child,$target)) 
+				{
 #					print "!Found home in ",$target->name(), "\n";
 					$child->move(last_child=>$target); 
 					#last_child moves marked up text nicely
@@ -986,7 +987,7 @@ sub relocate {
 			while ($exec[0] ne 'pack') {
 				push @get_list, shift @exec;
 			}
-			print "Gathering neighbors, ".join(" ",@get_list)."\n";
+			print "✓ Gathering neighbors, ".join(" ",@get_list)."\n";
 			
 			my $target = $child;
 			
@@ -1008,8 +1009,12 @@ sub relocate {
 		}
 		elsif ($com eq 'pack') {
 			my $target = shift @exec;
-			print "Wrapping in a $target element.\n";
+			print "✓ Wrapping in a $target element.\n";
 			my $parent = $child->wrap_in($target);
+			if ($log->{$child}) {
+				$log->{$child}{'p_code'} = "PACKED";
+				$log->{$child}{'p_fate'} = $target;
+			}
 			while (my $a = shift @group) {
 				$a->move(last_child=>$parent);
 			}
@@ -1290,8 +1295,9 @@ sub print_log {
 			
 			else
 			{
-				$i .= sprintf "%s had error $code\n",
-				$log{$section}->{'name'},;
+				$i .= sprintf "%s had error $code %s\n",
+				$log{$section}->{'name'},
+				$log{$section}->{'p_fate'} ? $log{$section}->{'p_fate'} :'';
 			}
 			
 		}
