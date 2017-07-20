@@ -12,8 +12,7 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.35; #rewrites the dump_truck subroutine
-#it was causing problems
+my $version = 2.36; 
 
 my $dev = 1;
 my $verbose = 0;
@@ -327,8 +326,9 @@ my %adopt = (
 'refObject' 		=> [qw(look type fn),"Steamroller Version $version."],
 );
 
-my @unique = 
-('#PCDATA','transac','martifHeader','text','fileDesc','title','body','descrip');
+my @unique = #PCDATA not unique because it stacks!
+('transac','martifHeader','text','fileDesc','title','body','descrip','term',
+'encodingDesc','revisionDesc','titleStmt','publicationStmt','back');
 
 my %renp=(
 'martif'			=> [''],
@@ -340,19 +340,14 @@ my %renp=(
 'titleStmt'       	=> ['fileDesc'],
 'publicationStmt' 	=> ['fileDesc'],
 'sourceDesc'      	=> ['fileDesc'],
-'title'           	=> ['titleStmt'],
-'note'            	=> ['titleStmt'],
 'change'          	=> ['revisionDesc'],
 'p'               	=> ['publicationStmt','sourceDesc','encodingDesc','change'],
-'#PCDATA'         	=> ['title','note','p','item'],
 'body'            	=> ['text'],
 'back'            	=> ['text'],
 'termEntry'       	=> ['body'],
-'placeholder'     	=> ['body'],
 'refObjectList'   	=> ['back'],
 'refObject'       	=> ['refObjectList'],
 'item'            	=> ['refObject'],
-'termEntry' 	  	=> [''],
 'langSet' 		  	=> [qw(termEntry)],
 'tig' 			  	=> [qw(langSet)],
 'term' 			  	=> [qw(tig)],
@@ -369,7 +364,7 @@ my %renp=(
 'note' 			  	=> [qw(termEntry langSet tig titleStmt)],
 'ref' 			  	=> [qw(termEntry langSet tig)],
 'xref' 			  	=> [qw(termEntry langSet tig)],
-'transac' 		  	=> [qw(termEntry langSet tig transacGrp)],
+'transac' 		  	=> [qw(transacGrp)],
 'transacNote' 	  	=> [qw(transacGrp)],
 'date' 			  	=> [qw(transacGrp)],
 'hi' 			  	=> [qw(p term termNote descrip admin
@@ -380,6 +375,47 @@ my %renp=(
 'ph' 			  	=> [qw(p termNote descrip admin note transac transacNote foreign)],
 '#PCDATA' 		  	=> [qw(p term termNote descrip admin note ref
 					xref transac transacNote date hi foreign bpt ept ph p item)],
+);
+
+my %locations=(
+'martif'			=> [qw(fight root sourceDesc)],
+'martifHeader'    	=> [qw(fight martif sourceDesc pack martif)],
+'text'            	=> [qw(fight martif sourceDesc pack martif)],
+'fileDesc'        	=> [qw(fight martifHeader sourceDesc pack martifHeader)],
+'encodingDesc'    	=> [qw(fight martifHeader sourceDesc pack martifHeader)],
+'revisionDesc'    	=> [qw(fight martifHeader sourceDesc pack martifHeader)],
+'titleStmt'       	=> [qw(fight fileDesc sourceDesc pack fileDesc)],
+'publicationStmt' 	=> [qw(fight fileDesc sourceDesc pack fileDesc)],
+'sourceDesc'      	=> [qw(seek fileDesc pack fileDesc)],
+'title'           	=> [qw(fight titleStmt pack titleStmt)],
+'note'            	=> [qw(rise seek titleStmt convert)],
+'change'          	=> [qw(seek revisionDesc pack revisionDesc)],
+'p'               	=> [qw(rise convert)],
+'body'            	=> [qw(fight text sourceDesc pack text)],
+'back'            	=> [qw(fight text sourceDesc pack text)],
+'termEntry'       	=> [qw(handle)],
+'refObjectList'   	=> [qw(seek back pack back)],
+'refObject'       	=> [qw(seek refObjectList pack refObjectList)],
+'item'            	=> [qw(seek refObject convert)],                    
+'langSet' 		  	=> [qw(rise pack termEntry)],
+'tig' 			  	=> [qw(rise pack langSet)],
+'term' 			  	=> [qw(rise gather termNote pack tig)],
+'termNote' 		  	=> [qw(rise convert)],                  
+'descrip' 		  	=> [qw(rise defaultTerm)],
+'descripGrp' 	  	=> [qw(rise defaultTerm)],
+'admin' 		  	=> [qw(rise defaultTerm)],
+'transacGrp' 	  	=> [qw(rise defaultTerm)],
+'ref' 			  	=> [qw(rise defaultTerm)],
+'xref' 			  	=> [qw(rise defaultTerm)],                  
+'transac' 		  	=> [qw(gather transacNote date pack transacGrp)],
+'transacNote' 	  	=> [qw(rise convert)],
+'date' 			  	=> [qw(rise convert)],                 
+'hi' 			  	=> [qw(rise gather hi foreign bpt ept ph),"#PCDATA",qw(pack p)],
+'foreign' 		  	=> [qw(rise gather hi foreign bpt ept ph),"#PCDATA",qw(pack p)],
+'bpt' 			  	=> [qw(rise gather hi foreign bpt ept ph),"#PCDATA",qw(pack p)],
+'ept' 			  	=> [qw(rise gather hi foreign bpt ept ph),"#PCDATA",qw(pack p)],
+'ph' 			  	=> [qw(rise gather hi foreign bpt ept ph),"#PCDATA",qw(pack p)],
+'#PCDATA' 		  	=> [qw(rise gather hi foreign bpt ept ph),"#PCDATA",qw(pack p)],	
 );
 
 #intelligently stores disallowed data in a safe location nearby
@@ -770,7 +806,9 @@ sub child_check {
 							push $log->{$child}{'other'},
 							grep ($_ == $oliver,$child->descendants()) ?
 							"FOUND":"SOUGHT", 
-							$oliver,$oliver->parent();
+							$oliver,$oliver->parent()
+							if defined $log->{$child};
+							
 							$oliver->move(first_child=>$child);
 							return 1;
 						} 
@@ -890,6 +928,100 @@ sub relocate {
 	#placeholder for now
 	
 	my ($section,$child,$log) = @_;
+	my $cname = $child->name();
+	
+	my @exec = @{$locations{$cname}};
+	#print join(' ',@exec),"\n\n";
+	my @group;
+	
+	while (my $com = shift @exec) {
+		
+		if ($com eq 'defaultTerm') {
+			$log eq \%aux_log ? 
+			print "Moving to a default termEntry.\n"
+			:
+			print "Dumping in this termEntry.\n";
+		}
+		elsif ($com eq 'rise') {
+			print "Rising until valid.\n";
+			
+			my $target = $child;
+			
+			while ($target = $target->parent()) {
+#				print "-Checking ",$target->name(), "\n";
+				unless (place_check($child,$target) || sib_check($child,$target)) {
+#					print "!Found home in ",$target->name(), "\n";
+					$child->move(last_child=>$target); 
+					#last_child moves marked up text nicely
+					if ($log->{$child}) {
+						$log->{$child}{'p_code'} = "RISE";
+						$log->{$child}{'p_fate'} = $target->name(); #line number?
+					}
+					return 0; #a true return value is only to return 
+					#a new element to the stack, as in 'pack'.
+				}
+			}
+			
+		}
+		elsif ($com eq 'fight') {
+			my $target = shift @exec;
+			my $loser = shift @exec;
+			print "Fighting for spot in $target, loser goes to $loser.\n";
+		}
+		elsif ($com eq 'seek') {
+			my $target = shift @exec;
+			print "Looking for $target.\n";
+		}
+		elsif ($com eq 'handle') {
+			print "Processing as a termEntry.\n";
+		}
+		elsif ($com eq 'convert') {
+			print "Converting PCDATA.\n";
+		}
+		elsif ($com eq 'gather') 
+		#gather must be followed by elements to get, then 'pack'!
+		{
+			my @get_list;
+			
+			while ($exec[0] ne 'pack') {
+				push @get_list, shift @exec;
+			}
+			print "Gathering neighbors, ".join(" ",@get_list)."\n";
+			
+			my $target = $child;
+			
+			while ($target = $target->next_sibling())
+			{ #WHY ARE transac ELEMENTS NOT PICKING THEMSELVES UP
+#				print '|||',$target->name(),' ',$target->text(),"[]\n";
+				if (grep {$target->name() eq $_} @get_list) {
+					if (place_check($target) || sib_check($target))
+					#don't kidnap elements happy where they are 
+					{
+						push @group, $target;
+#						print "=Found ",$target->name(),"\n";
+					}
+				}
+									
+			}
+			
+			
+		}
+		elsif ($com eq 'pack') {
+			my $target = shift @exec;
+			print "Wrapping in a $target element.\n";
+			my $parent = $child->wrap_in($target);
+			while (my $a = shift @group) {
+				$a->move(last_child=>$parent);
+			}
+			return $parent;
+		}
+		else 
+		{
+			print "I was not expecting $com.\n";
+		}
+		
+	}
+	
 }
 
 sub order_check {
@@ -905,8 +1037,18 @@ sub order_check {
 		if (my $code = place_check($child) || sib_check($child)) 
 		
 		{
-			print "-----$code!!!!!\n";
-			relocate($section,$child,$log);
+#			print "^^^",$child->name();
+			printf "%s %s %s %s\n", $log->{$child}?$log->{$child}{'line'}:'',
+			$child->name(), $code, join(' ',@{$locations{$child->name()}});
+			
+			if (my $new = relocate($section,$child,$log)) 
+			#currently, if relocate fails, it should just return the child?
+			#success will return true only if something needs to go back on stack
+			{
+#				print "&&&&&&&",$new->name(),"\n";
+				push @children,$new;
+			}
+			print "\n";
 		}
 		
 		

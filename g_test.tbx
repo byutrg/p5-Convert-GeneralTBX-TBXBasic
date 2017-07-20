@@ -1,14 +1,10 @@
 <martif type="TBX-Basic" xml:lang="en-US">
-  <martifHeader>
-    <fileDesc>
-      <sourceDesc>
-        <p>This is a sample TBX-Basic file.</p>
-      </sourceDesc>
-    </fileDesc>
+
     <encodingDesc>
+		<refObject>does not belong<hi>here</hi> at all</refObject>
       <p type="XCSURI">TBXBasicXCSV02.xcs</p>
     </encodingDesc>
-  </martifHeader>
+	<descrip type="subjectField">does not belong in aux</descrip>
   <text>
     <body>
       <termEntry id="c1">
@@ -28,14 +24,19 @@
         </transacGrp>
         <transacGrp>
           <transac type="transactionType">modification</transac>
-          <transacNote target="US5002" type="responsibility">John</transacNote>
+          <sourceDesc>
+		  <transacNote target="US5002" type="responsibility">John</transacNote>
+	  </sourceDesc>
           <date>2007-07-23</date>
         </transacGrp>
         <note>This is a sample entry with some data categories at the entry level. </note>
         <ref target="c2" type="crossReference">unscheduled operation</ref>
         <xref target="wikipedia.org" type="externalCrossReference">Wikipedia web site</xref>
         <xref target="http://upload.wikimedia.org/wikipedia/commons/8/80/Wikipedia-logo-v2.svg" type="xGraphic">Wikipedia logo</xref>
-        <langSet xml:lang="en">
+	    <ref target="c2" type="crossReference">
+	  	  <admin type="Source">Double Marked</admin>
+	    </ref>
+		<langSet xml:lang="en">
           <tig>
             <term>scheduled operation</term>
             <termNote type="partOfSpeech">
@@ -58,7 +59,10 @@
         </langSet>
       </termEntry>
       <termEntry id="c2">
-        <descrip type="subjectField">manufacturing</descrip>
+          <transac type="transactionType">modification</transac>
+          <transacNote target="US5002" type="responsibility">John</transacNote>
+          <date>2007-07-23</date>
+		<descrip type="subjectField">manufacturing</descrip>
         <langSet xml:lang="en">
           <descrip type="definition">This is a sample definition at the language level.
 						This one has no source information required therefore it is not embedded in
