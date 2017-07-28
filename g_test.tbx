@@ -1,4 +1,5 @@
 <martif type="TBX-Basic" xml:lang="en-US">
+	<martifHeader/>
 	<fileDesc/>
     <encodingDesc>
 		<refObject>does not belong<hi>here</hi> at all</refObject>
@@ -6,6 +7,7 @@
     </encodingDesc>
 	<descrip type="subjectField">does not belong in aux</descrip>
   <text>
+	<martifHeader/>
     <body>
       <termEntry id="c1">
         <descrip type="subjectField">manufacturing</descrip>

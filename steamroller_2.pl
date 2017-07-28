@@ -12,8 +12,9 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.37;
-#implements seek in relocator 
+my $version = 2.371;
+#implements fight (a kind of seek) in relocator 
+#still has some problems
 
 my $dev = 1;
 my $verbose = 0;
@@ -1002,10 +1003,69 @@ sub relocate {
 			}
 			
 		}
-		elsif ($com eq 'fight') {
+		elsif ($com eq 'fight') 
+		#needs to handle $target = 'root'
+		#needs to handle conflicts, doesn't yet
+		#could be merged with 'seek',
+		{
 			my $target = shift @exec;
 			my $loser = shift @exec;
 			print "Fighting for spot in $target, loser goes to $loser.\n";
+			if ($log eq \%term_log) {
+				my @out = ();
+				print "This should not be in a term.\n";
+				foreach my $elt ($child->descendants()) {
+					if (grep {$_ eq $elt->name()} @term_elts) {
+						$elt->move(after=>$child);
+						if ($log->{$elt}) {
+							$log->{$elt}{'p_code'} = "ORPHANED";
+							$log->{$elt}{'p_fate'} = $child->parent->name() // '';
+						}
+						push @out,"NEW",$elt;
+					}
+				}
+				
+				$child->move(last_child=>$t->root());
+				if ($log->{$child}) {
+					$log->{$child}{'p_code'} = "MOVED";
+					$log->{$child}{'p_fate'} = 'aux';
+				}
+				
+				return \@out;
+			}
+			else
+			
+			{
+				print "Good thing we are in the aux!\n";
+				if (my $elt = 
+				$section->name() eq $target ?
+				$section : $section->first_descendant($target)
+				)
+				{
+					print "!!! Found $target $elt\n";
+					#print $elt->name(),$elt->first_child()->name(),
+					#$elt->first_child($child->name()),"88888\n";
+					if (my $contender = $elt->first_child($child->name())) {
+						
+						$contender->merge($child);
+						return ["CHILDREN"];
+					}
+					else
+					{
+						$child->move(last_child=>$elt);
+						if ($log->{$child}) {
+							$log->{$child}{'p_code'} = "MOVED";
+							$log->{$child}{'p_fate'} = $elt->name();
+						}
+						elsif ($log->{$elt}) {
+							push $log->{$elt}{'other'}, "MOVED";
+						}
+						return ["SELF"];
+					}
+					
+					
+				}
+			}
 		}
 		elsif ($com eq 'seek') 
 		#seek is used to for items which can only belong in one place in 
@@ -1036,7 +1096,8 @@ sub relocate {
 				
 				return \@out;
 			}
-			else {
+			else 
+			{
 				print "Good thing we are in the aux!\n";
 				if (my $elt = 
 				$section->name() eq $target ?
