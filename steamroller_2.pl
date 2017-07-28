@@ -12,7 +12,8 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.36; 
+my $version = 2.37;
+#implements seek in relocator 
 
 my $dev = 1;
 my $verbose = 0;
@@ -329,6 +330,44 @@ my %adopt = (
 my @unique = #PCDATA not unique because it stacks!
 ('transac','martifHeader','text','fileDesc','title','body','descrip','term',
 'encodingDesc','revisionDesc','titleStmt','publicationStmt','back');
+
+#a reference for things that can only go in termEntry or outside of one
+my @term_elts = (
+'termEntry' 		,
+'langSet' 		  	,
+'tig' 			  	,
+'term' 			  	,
+'termNote' 		  	,
+'descrip' 		  	,
+'descripGrp' 	  	,
+'admin' 		  	,
+'transacGrp' 	  	,
+'ref' 			  	,
+'xref' 			  	,
+'transac' 		  	,
+'transacNote' 	  	,
+'date' 			  	,
+);
+my @aux_elts = (
+'martif'		  ,
+'martifHeader'    ,
+'text'            ,
+'fileDesc'        ,
+'encodingDesc'    ,
+'revisionDesc'    ,
+'titleStmt'       ,
+'publicationStmt' ,
+'sourceDesc'      ,
+'title'           ,
+'change'          ,
+'p'               ,
+'body'            ,
+'back'            ,
+'termEntry'       ,
+'refObjectList'   ,
+'refObject'       ,
+'item'            ,
+);
 
 my %renp=(
 'martif'			=> [''],
@@ -927,7 +966,7 @@ sub relocate {
 	#maybe better just inside order_check
 	#placeholder for now
 	
-	my ($section,$child,$log) = @_;
+	my ($t,$section,$child,$log) = @_;
 	my $cname = $child->name();
 	
 	my @exec = @{$locations{$cname}};
@@ -958,8 +997,7 @@ sub relocate {
 						$log->{$child}{'p_code'} = "RISE";
 						$log->{$child}{'p_fate'} = $target->name(); #line number?
 					}
-					return 0; #a true return value is only to return 
-					#a new element to the stack, as in 'pack'.
+					return ["CHILDREN"]; #now push children to stack
 				}
 			}
 			
@@ -969,9 +1007,54 @@ sub relocate {
 			my $loser = shift @exec;
 			print "Fighting for spot in $target, loser goes to $loser.\n";
 		}
-		elsif ($com eq 'seek') {
+		elsif ($com eq 'seek') 
+		#seek is used to for items which can only belong in one place in 
+		#the martif header. If the element in check is in a termEntry,
+		#the first step is to move it to the martifHeader.
+		{
 			my $target = shift @exec;
-			print "Looking for $target.\n";
+			print "==Looking for $target.\n";
+			if ($log eq \%term_log) {
+				my @out = ();
+				print "This should not be in a term.\n";
+				foreach my $elt ($child->descendants()) {
+					if (grep {$_ eq $elt->name()} @term_elts) {
+						$elt->move(after=>$child);
+						if ($log->{$elt}) {
+							$log->{$elt}{'p_code'} = "ORPHANED";
+							$log->{$elt}{'p_fate'} = $child->parent->name() // '';
+						}
+						push @out,"NEW",$elt;
+					}
+				}
+				
+				$child->move(last_child=>$t->root());
+				if ($log->{$child}) {
+					$log->{$child}{'p_code'} = "MOVED";
+					$log->{$child}{'p_fate'} = 'aux';
+				}
+				
+				return \@out;
+			}
+			else {
+				print "Good thing we are in the aux!\n";
+				if (my $elt = 
+				$section->name() eq $target ?
+				$section : $section->first_descendant($target)
+				)
+				{
+					print "!!! Found $target $elt\n";
+					$child->move(last_child=>$elt);
+					if ($log->{$child}) {
+						$log->{$child}{'p_code'} = "MOVED";
+						$log->{$child}{'p_fate'} = $elt->name();
+					}
+					elsif ($log->{$elt}) {
+						push $log->{$elt}{'other'}, "MOVED";
+					}
+					return ["SELF"];
+				}
+			}
 		}
 		elsif ($com eq 'handle') {
 			print "Processing as a termEntry.\n";
@@ -1018,14 +1101,17 @@ sub relocate {
 			while (my $a = shift @group) {
 				$a->move(last_child=>$parent);
 			}
-			return $parent;
+			return ["NEW",$parent];
 		}
 		else 
 		{
-			print "I was not expecting $com.\n";
+			print "Relocator was not expecting $com.\n";
 		}
 		
 	}
+	
+	return ["CHILDREN"]; #default, may not be appropriate after
+	#all methods are implemented
 	
 }
 
@@ -1046,19 +1132,39 @@ sub order_check {
 			printf "%s %s %s %s\n", $log->{$child}?$log->{$child}{'line'}:'',
 			$child->name(), $code, join(' ',@{$locations{$child->name()}});
 			
-			if (my $new = relocate($section,$child,$log)) 
+			if (my $result = relocate($t,$section,$child,$log)) 
 			#currently, if relocate fails, it should just return the child?
 			#success will return true only if something needs to go back on stack
 			{
-#				print "&&&&&&&",$new->name(),"\n";
-				push @children,$new;
+				
+				while (my $item = shift @{$result}) {
+					
+					if ($item eq "SELF") {
+						push @children,$child;
+					}
+					elsif ($item eq "CHILDREN") {
+						push @children,$child->children();
+					}
+					elsif ($item eq "NEW")
+					{
+						push @children, shift @{$result};
+					}
+					else {
+						print "Order_check was not expecting $item.\n";
+					}
+				}
+				
+			
 			}
 			print "\n";
+		}
+		else {
+			push @children, $child->children();
 		}
 		
 		
 		
-		push @children, $child->children();
+		
 	}
 	
 }

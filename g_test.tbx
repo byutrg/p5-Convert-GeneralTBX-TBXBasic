@@ -1,5 +1,5 @@
 <martif type="TBX-Basic" xml:lang="en-US">
-
+	<fileDesc/>
     <encodingDesc>
 		<refObject>does not belong<hi>here</hi> at all</refObject>
       <p type="XCSURI">TBXBasicXCSV02.xcs</p>
@@ -10,6 +10,7 @@
       <termEntry id="c1">
         <descrip type="subjectField">manufacturing</descrip>
 		<descrip type="definition">what</descrip>
+		<refObject>does not belong in a term Entry <hi>at all</hi> you know</refObject>
         <descripGrp>
 			<descrip type="definition">This is a sample definition too.</descrip>
 		  <descrip type="definition">This is a sample definition at the entry level.</descrip>
@@ -24,7 +25,7 @@
         </transacGrp>
         <transacGrp>
           <transac type="transactionType">modification</transac>
-          <sourceDesc>
+          <sourceDesc><p>does not belong in term Either</p>
 		  <transacNote target="US5002" type="responsibility">John</transacNote>
 	  </sourceDesc>
           <date>2007-07-23</date>
