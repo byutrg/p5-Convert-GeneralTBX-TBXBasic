@@ -1,15 +1,17 @@
 <martif type="TBX-Basic" xml:lang="en-US">
-	<martifHeader/>
-	<fileDesc/>
+	<martifHeader id="m1"/>
+	<title>
+		<titleStmt>First Title</titleStmt>
+	</title>
     <encodingDesc>
 		<refObject>does not belong<hi>here</hi> at all</refObject>
       <p type="XCSURI">TBXBasicXCSV02.xcs</p>
     </encodingDesc>
 	<descrip type="subjectField">does not belong in aux</descrip>
   <text>
-	<martifHeader/>
     <body>
       <termEntry id="c1">
+		  
         <descrip type="subjectField">manufacturing</descrip>
 		<descrip type="definition">what</descrip>
 		<refObject>does not belong in a term Entry <hi>at all</hi> you know</refObject>
@@ -20,6 +22,14 @@
         </descripGrp>
         <transacGrp>
           <transac type="transactionType">origination</transac>
+		  <martifHeader id="m2">
+			  <fileDesc>
+				 
+				  <sourceDesc>
+					  <p>Im actually inside a transacGrp!</p>
+				  </sourceDesc>
+			  </fileDesc>
+		  </martifHeader>
 		  <transac type="transactionType">modification</transac>
           <transacNote target="US5001" type="responsibility">Jane</transacNote>
           <term>not here</term>
@@ -41,11 +51,14 @@
 	    </ref>
 		<langSet xml:lang="en">
           <tig>
+		  	<titleStmt>
+		  		<title>Second Title</title>
+		  	</titleStmt>
             <term>scheduled operation</term>
             <termNote type="partOfSpeech">
 				<term>preposition</term>
 			</termNote>
-            <termNote type="termType">fullForm</termNote>
+            <termNote no="way" type="termType">fullForm</termNote>
             <termNote type="grammaticalGender">masculine</termNote>
             <date>2193-07-21</date>
 		    <termNote type="administrativeStatus">preferredTerm-admn-sts</termNote>

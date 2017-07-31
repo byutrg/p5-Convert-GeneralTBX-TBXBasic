@@ -12,8 +12,8 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.371;
-#implements fight (a kind of seek) in relocator 
+my $version = 2.372;
+#implements merge (a kind of seek) in relocator 
 #still has some problems
 
 my $dev = 1;
@@ -378,6 +378,7 @@ my %renp=(
 'encodingDesc'    	=> ['martifHeader'],
 'revisionDesc'    	=> ['martifHeader'],
 'titleStmt'       	=> ['fileDesc'],
+'title'				=> ['titleStmt'],
 'publicationStmt' 	=> ['fileDesc'],
 'sourceDesc'      	=> ['fileDesc'],
 'change'          	=> ['revisionDesc'],
@@ -418,21 +419,21 @@ my %renp=(
 );
 
 my %locations=(
-'martif'			=> [qw(fight root sourceDesc)],
-'martifHeader'    	=> [qw(fight martif sourceDesc pack martif)],
-'text'            	=> [qw(fight martif sourceDesc pack martif)],
-'fileDesc'        	=> [qw(fight martifHeader sourceDesc pack martifHeader)],
-'encodingDesc'    	=> [qw(fight martifHeader sourceDesc pack martifHeader)],
-'revisionDesc'    	=> [qw(fight martifHeader sourceDesc pack martifHeader)],
-'titleStmt'       	=> [qw(fight fileDesc sourceDesc pack fileDesc)],
-'publicationStmt' 	=> [qw(fight fileDesc sourceDesc pack fileDesc)],
+'martif'			=> [qw(merge root)],
+'martifHeader'    	=> [qw(merge martif pack martif)],
+'text'            	=> [qw(merge martif pack martif)],
+'fileDesc'        	=> [qw(merge martifHeader pack martifHeader)],
+'encodingDesc'    	=> [qw(merge martifHeader pack martifHeader)],
+'revisionDesc'    	=> [qw(merge martifHeader pack martifHeader)],
+'titleStmt'       	=> [qw(merge fileDesc pack fileDesc)],
+'publicationStmt' 	=> [qw(merge fileDesc pack fileDesc)],
 'sourceDesc'      	=> [qw(seek fileDesc pack fileDesc)],
-'title'           	=> [qw(fight titleStmt pack titleStmt)],
+'title'           	=> [qw(merge titleStmt pack titleStmt)],
 'note'            	=> [qw(rise seek titleStmt convert)],
 'change'          	=> [qw(seek revisionDesc pack revisionDesc)],
 'p'               	=> [qw(rise convert)],
-'body'            	=> [qw(fight text sourceDesc pack text)],
-'back'            	=> [qw(fight text sourceDesc pack text)],
+'body'            	=> [qw(merge text pack text)],
+'back'            	=> [qw(merge text pack text)],
 'termEntry'       	=> [qw(handle)],
 'refObjectList'   	=> [qw(seek back pack back)],
 'refObject'       	=> [qw(seek refObjectList pack refObjectList)],
@@ -465,8 +466,8 @@ sub dump_truck {
 
 	#initialize message
 	my $message = $att ?
-	sprintf "Removed att '%s' from %s%s",
-	$att, $section->name(),
+	sprintf "Removed att '%s:%s' from %s%s",
+	$att, $section->att($att),$section->name(),
 	$log->{$section} ? " (line:".$log->{$section}{'line'}.")" : "",
 	:
 	sprintf "Removed %s%s",
@@ -1003,14 +1004,15 @@ sub relocate {
 			}
 			
 		}
-		elsif ($com eq 'fight') 
-		#needs to handle $target = 'root'
-		#needs to handle conflicts, doesn't yet
-		#could be merged with 'seek',
-		{
+		elsif ($com eq 'merge' or $com eq 'seek') {
 			my $target = shift @exec;
-			my $loser = shift @exec;
-			print "Fighting for spot in $target, loser goes to $loser.\n";
+			#my $loser = shift @exec if $com eq 'merge';
+			
+			#debug statement
+			$com eq 'merge' ? 
+			print "Fighting for spot in $target\n":
+			print "==Looking for $target.\n";
+			
 			if ($log eq \%term_log) {
 				my @out = ();
 				print "This should not be in a term.\n";
@@ -1021,20 +1023,24 @@ sub relocate {
 							$log->{$elt}{'p_code'} = "ORPHANED";
 							$log->{$elt}{'p_fate'} = $child->parent->name() // '';
 						}
-						push @out,"NEW",$elt;
+						push @out, "NEW", $elt;
 					}
 				}
-				
+			
 				$child->move(last_child=>$t->root());
+				
+				#transfer record to %aux_log
 				if ($log->{$child}) {
 					$log->{$child}{'p_code'} = "MOVED";
 					$log->{$child}{'p_fate'} = 'aux';
+					push $log->{$child}{'other'}, "EXILED";
+					$aux_log{$child} = $log->{$child};
+					delete $log->{$child};
 				}
-				
-				return \@out;
+			
+			return \@out;
 			}
 			else
-			
 			{
 				print "Good thing we are in the aux!\n";
 				if (my $elt = 
@@ -1043,11 +1049,25 @@ sub relocate {
 				)
 				{
 					print "!!! Found $target $elt\n";
-					#print $elt->name(),$elt->first_child()->name(),
-					#$elt->first_child($child->name()),"88888\n";
-					if (my $contender = $elt->first_child($child->name())) {
+					
+					if ($com eq 'merge' and 
+					my $contender = $elt->first_child($child->name())) {
+						
+						foreach my $att (@{$atts{$cname}}) {
+							if ($contender->att($att) and $child->att($att)) {
+								dump_truck($t,$child,$log,$att);
+							}
+							
+						}
+						
+						if ($log->{$child}) {
+							$log->{$child}{'p_code'} = "MERGED";
+							$log->{$child}{'p_fate'} = $section->name();
+						}
 						
 						$contender->merge($child);
+						print "&&&MERGING\n";
+						
 						return ["CHILDREN"];
 					}
 					else
@@ -1057,65 +1077,12 @@ sub relocate {
 							$log->{$child}{'p_code'} = "MOVED";
 							$log->{$child}{'p_fate'} = $elt->name();
 						}
-						elsif ($log->{$elt}) {
-							push $log->{$elt}{'other'}, "MOVED";
-						}
+						print "^^^MOVING\n";
 						return ["SELF"];
 					}
-					
-					
 				}
 			}
-		}
-		elsif ($com eq 'seek') 
-		#seek is used to for items which can only belong in one place in 
-		#the martif header. If the element in check is in a termEntry,
-		#the first step is to move it to the martifHeader.
-		{
-			my $target = shift @exec;
-			print "==Looking for $target.\n";
-			if ($log eq \%term_log) {
-				my @out = ();
-				print "This should not be in a term.\n";
-				foreach my $elt ($child->descendants()) {
-					if (grep {$_ eq $elt->name()} @term_elts) {
-						$elt->move(after=>$child);
-						if ($log->{$elt}) {
-							$log->{$elt}{'p_code'} = "ORPHANED";
-							$log->{$elt}{'p_fate'} = $child->parent->name() // '';
-						}
-						push @out,"NEW",$elt;
-					}
-				}
-				
-				$child->move(last_child=>$t->root());
-				if ($log->{$child}) {
-					$log->{$child}{'p_code'} = "MOVED";
-					$log->{$child}{'p_fate'} = 'aux';
-				}
-				
-				return \@out;
-			}
-			else 
-			{
-				print "Good thing we are in the aux!\n";
-				if (my $elt = 
-				$section->name() eq $target ?
-				$section : $section->first_descendant($target)
-				)
-				{
-					print "!!! Found $target $elt\n";
-					$child->move(last_child=>$elt);
-					if ($log->{$child}) {
-						$log->{$child}{'p_code'} = "MOVED";
-						$log->{$child}{'p_fate'} = $elt->name();
-					}
-					elsif ($log->{$elt}) {
-						push $log->{$elt}{'other'}, "MOVED";
-					}
-					return ["SELF"];
-				}
-			}
+			
 		}
 		elsif ($com eq 'handle') {
 			print "Processing as a termEntry.\n";
