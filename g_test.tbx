@@ -24,7 +24,9 @@
           <transac type="transactionType">origination</transac>
 		  <martifHeader id="m2">
 			  <fileDesc>
-				 
+				  <martif xml:lang="en-UK">
+					  <sourceDesc>what about me?</sourceDesc>
+				  </martif>
 				  <sourceDesc>
 					  <p>Im actually inside a transacGrp!</p>
 				  </sourceDesc>

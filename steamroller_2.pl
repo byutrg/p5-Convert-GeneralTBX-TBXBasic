@@ -12,9 +12,8 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.372;
-#implements merge (a kind of seek) in relocator 
-#still has some problems
+my $version = 2.373;
+#finishes merge and seek
 
 my $dev = 1;
 my $verbose = 0;
@@ -462,7 +461,7 @@ my %locations=(
 #intelligently stores disallowed data in a safe location nearby
 sub dump_truck {
 	#value is optional,used for atts
-	my ($t,$section,$log,$att) = @_;
+	my ($t,$section,$log,$att,$code) = @_;
 
 	#initialize message
 	my $message = $att ?
@@ -488,7 +487,7 @@ sub dump_truck {
 	
 	if ($log->{$section}) {
 		if ($att) {
-			$log->{$section}{'atts'}{$att}{'code'} = "INVALID";
+			$log->{$section}{'atts'}{$att}{'code'} = $code // "INVALID";
 			$log->{$section}{'atts'}{$att}{'a_fate'} = $fate;
 		}
 		else
@@ -505,7 +504,7 @@ sub dump_truck {
 			$message .= sprintf ", %s=%s", $a, $section->att($a);
 			if ($log->{$section}{'atts'}{$a}) {
 
-				$log->{$section}{'atts'}{$a}{'code'} = "INVALID";
+				$log->{$section}{'atts'}{$a}{'code'} = $code // "INVALID";
 				$log->{$section}{'atts'}{$a}{'a_fate'} = $fate;
 			}
 		}
@@ -746,8 +745,10 @@ sub prereq {
 					$section->set_att($att=>$val);
 					$log->{$section}{'atts'}{$att}{'v_fate'}=$val;
 					$log->{$section}{'atts'}{$att}{'code'}=
-					$log->{$section}{'atts'}{$att}{'code'} eq "RENAME" ?
-					"OVERHAUL": "REVAL";
+					$log->{$section}{'atts'}{$att}{'code'} eq "RENAME" ? 
+					"OVERHAUL" :
+					$log->{$section}{'atts'}{$att}{'val'} ?
+					"REVAL" : "MISSING";
 				}
 				
 			}
@@ -806,9 +807,11 @@ sub dca_check {
 		$section->set_att(type => $guess);
 		
 		if ($log->{$section}{'atts'}{'type'}) {
-			$log->{$section}{'atts'}{'type'}{'code'}=
+			$log->{$section}{'atts'}{'type'}{'code'} =
 			$log->{$section}{'atts'}{'type'}{'code'} eq "RENAME" ?
-			"OVERHAUL": "REVAL";
+			"OVERHAUL":
+			$log->{$section}{'atts'}{'type'}{'val'} ?
+			"REVAL" : "MISSING";
 			$log->{$section}{'atts'}{'type'}{'v_fate'}=$guess;
 		}
 		
@@ -1010,12 +1013,12 @@ sub relocate {
 			
 			#debug statement
 			$com eq 'merge' ? 
-			print "Fighting for spot in $target\n":
-			print "==Looking for $target.\n";
+			print "✓ Fighting for spot in $target\n":
+			print "✓ Looking for $target.\n";
 			
 			if ($log eq \%term_log) {
 				my @out = ();
-				print "This should not be in a term.\n";
+#				print "This should not be in a term.\n";
 				foreach my $elt ($child->descendants()) {
 					if (grep {$_ eq $elt->name()} @term_elts) {
 						$elt->move(after=>$child);
@@ -1031,6 +1034,7 @@ sub relocate {
 				
 				#transfer record to %aux_log
 				if ($log->{$child}) {
+#					print "123456 transferring\n";
 					$log->{$child}{'p_code'} = "MOVED";
 					$log->{$child}{'p_fate'} = 'aux';
 					push $log->{$child}{'other'}, "EXILED";
@@ -1042,20 +1046,34 @@ sub relocate {
 			}
 			else
 			{
-				print "Good thing we are in the aux!\n";
+#				print "Good thing we are in the aux!\n";
 				if (my $elt = 
 				$section->name() eq $target ?
 				$section : $section->first_descendant($target)
+				or $target eq 'root'
 				)
+				#assign $elt to the root/termEntry or its first descendant
+				#whichever can best parent $child.
+				#if $target is root, then we are dealing with a misplaced martif
+				#so let it in anyway with $elt undefined
 				{
-					print "!!! Found $target $elt\n";
+#					print "!!! Found $target \n";
 					
 					if ($com eq 'merge' and 
-					my $contender = $elt->first_child($child->name())) {
+					my $contender =
+					$target eq 'root' ? $t->root() :
+					$elt->first_child($child->name())) 
+					#if we are targeting the root, the contender is root.
+					#otherwise, it is an element with same name
+					{
 						
 						foreach my $att (@{$atts{$cname}}) {
 							if ($contender->att($att) and $child->att($att)) {
-								dump_truck($t,$child,$log,$att);
+								dump_truck($t,$child,$log,$att,"MERGE")
+								if $log->{$child} 
+								and $log->{$child}{'atts'}{$att}{'val'};
+								
+								
 							}
 							
 						}
@@ -1066,9 +1084,9 @@ sub relocate {
 						}
 						
 						$contender->merge($child);
-						print "&&&MERGING\n";
+#						print "&&&MERGING\n";
 						
-						return ["CHILDREN"];
+						return ["NEW",$contender];
 					}
 					else
 					{
@@ -1077,7 +1095,7 @@ sub relocate {
 							$log->{$child}{'p_code'} = "MOVED";
 							$log->{$child}{'p_fate'} = $elt->name();
 						}
-						print "^^^MOVING\n";
+#						print "^^^MOVING\n";
 						return ["SELF"];
 					}
 				}
@@ -1151,7 +1169,7 @@ sub order_check {
 	
 	while ($child = shift @children) {
 		my $cname = $child->name();
-		child_check($t, $section,$child,$log);
+		
 		
 		if (my $code = place_check($child) || sib_check($child)) 
 		
@@ -1187,7 +1205,9 @@ sub order_check {
 			print "\n";
 		}
 		else {
+			child_check($t, $section,$child,$log);			
 			push @children, $child->children();
+
 		}
 		
 		
@@ -1320,7 +1340,7 @@ sub order_root {
 
 sub print_log {
 	my (%log) = @_;
-	
+	print $lf "-"x20,"\n" if $verbose;
 	my $clean = 1;
 	my @sections = sort {$log{$a}{'line'} <=> $log{$b}{'line'}} keys %log;
 	foreach my $section (@sections) 
@@ -1385,7 +1405,7 @@ sub print_log {
 			my $contents = $log{$section}{'atts'}{$att};
 			$i .= sprintf "%s has attribute %s:%s.\n",
 			$log{$section}->{'name'},
-			$att, $contents->[0],
+			$att, $contents->{'val'},
 			if $verbose;
 			if (my $code = $contents->{'code'}) {
 				if ($code eq "MISSING") {
@@ -1410,7 +1430,7 @@ sub print_log {
 					$att, $contents->{'v_fate'};
 				}
 				else {
-					$i .= sprintf "Unknown Error on $att.\n";
+					$i .= sprintf "Unknown Error $code on $att.\n";
 				}
 			}
 			
