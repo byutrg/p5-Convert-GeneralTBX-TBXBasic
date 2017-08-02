@@ -12,8 +12,8 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.374;
-#finishes convert
+my $version = 2.38;
+#finishes relocator
 
 my $dev = 1;
 my $verbose = 0;
@@ -953,7 +953,7 @@ sub child_check {
 				} until (defined $log->{$entry});
 				push $log->{$entry}{'other'}, 
 				$entry == $child? "MISSING" : "CREATED", $kid, $child;
-				print "here\n";
+#				print "here\n";
 
 			}
 		}
@@ -1018,6 +1018,7 @@ sub sib_check {
 	return 0; #return 0 is passing, means no error code
 }
 
+my $default_term = XML::Twig::Elt->new('termEntry');
 sub relocate {
 	#maybe better just inside order_check
 	#placeholder for now
@@ -1032,10 +1033,18 @@ sub relocate {
 	while (my $com = shift @exec) {
 		
 		if ($com eq 'defaultTerm') {
-			$log eq \%aux_log ? 
-			print "Moving to a default termEntry.\n"
-			:
-			print "Dumping in this termEntry.\n";
+			
+			if ($log eq \%aux_log) {
+				print "Moving to a default termEntry.\n";
+				if ($log->{$child}) {
+					$log->{$child}{'p_code'} = "RELOCATE";
+					$log->{$child}{'p_fate'} = "default termEntry";
+				}
+				$child->move($default_term);
+			} else {
+				print "Dumping in this termEntry.\n";
+				dump_truck($t,$child,$log,'',"RELOCATE");
+			}
 		}
 		elsif ($com eq 'rise') {
 			print "✓ Rising until valid.\n";
@@ -1154,14 +1163,25 @@ sub relocate {
 			
 		}
 		elsif ($com eq 'handle') {
-			print "Processing as a termEntry.\n";
+			print "✓ Processing as a termEntry.\n";
+			foreach my $elt ($child->descendants_or_self()) {
+				$elt->sprint(); #why on earth does this fix it? initializes something...
+				term_log_init($t,$elt);
+				handle_term($t,$elt); #puts text in log
+			}
+			order_term($t,$child);
+			
 		}
 		elsif ($com eq 'convert') {
 #			print "\n"x10;
-			print "Converting $cname PCDATA.\n";
+			print "✓ Converting $cname PCDATA.\n";
 #			$child->parent()->print();
 			#what if...
 			if (my $fate = $pcstorage{$child->parent()->name()}) {
+				if ($log->{$child}) {
+					$log->{$child}{'p_code'} = "CONVERT";
+					$log->{$child}{'p_fate'} = "$fate";
+				}
 
 				#$child->set_name($fate);
 				#$child->parent()->print();
@@ -1304,6 +1324,10 @@ sub order_check {
 		
 		
 		
+	}
+	
+	if ($log eq \%aux_log and $default_term->has_children()) {
+		relocate($t,$section,$default_term,$log);
 	}
 	
 }
@@ -1643,7 +1667,7 @@ twig_handlers 		=> {
 	
 );
 
-$twig->set_id_seed('c');
+$twig->set_id_seed('s');
 
 $twig->parsefile($file);
 #change to safeparse so that something can be written to the logfile instead
