@@ -12,8 +12,8 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.373;
-#finishes merge and seek
+my $version = 2.374;
+#finishes convert
 
 my $dev = 1;
 my $verbose = 0;
@@ -413,7 +413,7 @@ my %renp=(
 'bpt' 			  	=> [qw(p termNote descrip admin note transac transacNote foreign)],
 'ept' 			  	=> [qw(p termNote descrip admin note transac transacNote foreign)],
 'ph' 			  	=> [qw(p termNote descrip admin note transac transacNote foreign)],
-'#PCDATA' 		  	=> [qw(p term termNote descrip admin note ref
+'#PCDATA' 		  	=> [qw(p term termNote descrip admin note ref title
 					xref transac transacNote date hi foreign bpt ept ph p item)],
 );
 
@@ -458,6 +458,47 @@ my %locations=(
 '#PCDATA' 		  	=> [qw(rise gather hi foreign bpt ept ph),"#PCDATA",qw(pack p)],	
 );
 
+my %pcstorage=(
+'martif'			=> 'sourceDesc',
+'martifHeader'    	=> 'sourceDesc',
+'text'            	=> 'sourceDesc',
+'fileDesc'        	=> 'sourceDesc',
+'encodingDesc'    	=> 'p',
+'revisionDesc'    	=> 'change',
+'titleStmt'       	=> 'note',
+'title'				=> '#PCDATA',
+'publicationStmt' 	=> 'p',
+'sourceDesc'      	=> 'p',
+'change'          	=> 'p',
+'p'               	=> '#PCDATA',
+'body'            	=> 'sourceDesc',
+'back'            	=> 'sourceDesc',
+'termEntry'       	=> 'note',
+'refObjectList'   	=> 'item',
+'refObject'       	=> 'item',
+'item'            	=> '#PCDATA',
+'langSet' 		  	=> 'note',
+'tig' 			  	=> 'note',
+'term' 			  	=> '#PCDATA',
+'termNote' 		  	=> '#PCDATA',                 	
+'descrip' 		  	=> '#PCDATA',
+'descripGrp' 	  	=> 'admin',
+'admin' 		  	=> '#PCDATA',
+'transacGrp' 	  	=> '',
+'note' 			  	=> '#PCDATA',
+'ref' 			  	=> '#PCDATA',
+'xref' 			  	=> '#PCDATA',
+'transac' 		  	=> '#PCDATA',
+'transacNote' 	  	=> '#PCDATA',
+'date' 			  	=> '#PCDATA',
+'hi' 			  	=> '#PCDATA',	 					
+'foreign' 		  	=> '#PCDATA',
+'bpt' 			  	=> '#PCDATA',
+'ept' 			  	=> '#PCDATA',
+'ph' 			  	=> '#PCDATA',
+'#PCDATA' 		  	=> '#PCDATA',				
+);
+
 #intelligently stores disallowed data in a safe location nearby
 sub dump_truck {
 	#value is optional,used for atts
@@ -500,12 +541,16 @@ sub dump_truck {
 	unless ($att) {
 		#continue to extract data from atts
 		#write error messages
-		foreach my $a (keys $section->atts()) {
-			$message .= sprintf ", %s=%s", $a, $section->att($a);
-			if ($log->{$section}{'atts'}{$a}) {
-
-				$log->{$section}{'atts'}{$a}{'code'} = $code // "INVALID";
-				$log->{$section}{'atts'}{$a}{'a_fate'} = $fate;
+		print "*"x10,$section->name(),$section->atts(),"-","\n";
+		if ($section->atts())
+		{
+			foreach my $a (keys $section->atts()) {
+				$message .= sprintf ", %s=%s", $a, $section->att($a);
+				if ($log->{$section}{'atts'}{$a}) {
+        	
+					$log->{$section}{'atts'}{$a}{'code'} = $code // "INVALID";
+					$log->{$section}{'atts'}{$a}{'a_fate'} = $fate;
+				}
 			}
 		}
 	}
@@ -544,6 +589,8 @@ sub dump_truck {
 	}
 
 	$att ? $section->del_att($att) : $section->erase();
+	
+	return $note;
 	
 }
 
@@ -898,11 +945,15 @@ sub child_check {
 				}
 				$kid->paste(first_child=>$child);
 				my $entry = $kid;
+				
 				do {
 					$entry = $entry->parent();
+					return 1 unless defined $entry;
+					
 				} until (defined $log->{$entry});
 				push $log->{$entry}{'other'}, 
 				$entry == $child? "MISSING" : "CREATED", $kid, $child;
+				print "here\n";
 
 			}
 		}
@@ -1041,7 +1092,7 @@ sub relocate {
 					$aux_log{$child} = $log->{$child};
 					delete $log->{$child};
 				}
-			
+				#print join(" ",@out),"&"x10,"\n";
 			return \@out;
 			}
 			else
@@ -1106,7 +1157,47 @@ sub relocate {
 			print "Processing as a termEntry.\n";
 		}
 		elsif ($com eq 'convert') {
-			print "Converting PCDATA.\n";
+#			print "\n"x10;
+			print "Converting $cname PCDATA.\n";
+#			$child->parent()->print();
+			#what if...
+			if (my $fate = $pcstorage{$child->parent()->name()}) {
+
+				#$child->set_name($fate);
+				#$child->parent()->print();
+				if ($fate eq 'sourceDesc') {
+					$child->wrap_in("sourceDesc");
+					return ["SELF"];
+				} elsif ($fate =~ /p|note/) {
+					$child->set_name($fate);
+					return ["CHILDREN"];
+				} elsif ($fate eq 'change') {
+					$child->wrap_in('change');
+					return ["SELF"];
+				} elsif ($fate eq '#PCDATA') {
+					my $new = XML::Twig::Elt->new("#PCDATA"=>$child->text());
+					$new->replace($child);
+#					$new->parent()->print();
+					return ["NEW",$new];
+				} elsif ($fate eq 'item') {
+					$child->set_name('item');
+					$child->set_att('type'=>'related');
+					return ["SELF"];
+				} elsif ($fate eq 'admin') {
+					$child->set_name('admin');
+					$child->set_att('type'=>'source');
+					return ["SELF"];
+				} else {
+					print "convert was not expecting $fate.\n";
+				}
+				print "\n"x10;
+				
+			}
+			
+			dump_truck($t,$child,$log,'',"CONVERT");
+
+			return ["NEW",];
+			
 		}
 		elsif ($com eq 'gather') 
 		#gather must be followed by elements to get, then 'pack'!
@@ -1121,8 +1212,8 @@ sub relocate {
 			my $target = $child;
 			
 			while ($target = $target->next_sibling())
-			{ #WHY ARE transac ELEMENTS NOT PICKING THEMSELVES UP
-#				print '|||',$target->name(),' ',$target->text(),"[]\n";
+			{ 
+#			  
 				if (grep {$target->name() eq $_} @get_list) {
 					if (place_check($target) || sib_check($target))
 					#don't kidnap elements happy where they are 
@@ -1168,13 +1259,13 @@ sub order_check {
 	my $child;
 	
 	while ($child = shift @children) {
+
 		my $cname = $child->name();
-		
 		
 		if (my $code = place_check($child) || sib_check($child)) 
 		
 		{
-#			print "^^^",$child->name();
+#			print "^^^",$child->name(),")\n";
 			printf "%s %s %s %s\n", $log->{$child}?$log->{$child}{'line'}:'',
 			$child->name(), $code, join(' ',@{$locations{$child->name()}});
 			

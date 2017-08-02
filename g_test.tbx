@@ -1,17 +1,18 @@
 <martif type="TBX-Basic" xml:lang="en-US">
+	
 	<martifHeader id="m1"/>
 	<title>
 		<titleStmt>First Title</titleStmt>
 	</title>
     <encodingDesc>
-		<refObject>does not belong<hi>here</hi> at all</refObject>
+		<refObject>does not belong <hi>here</hi> at all</refObject>
       <p type="XCSURI">TBXBasicXCSV02.xcs</p>
     </encodingDesc>
 	<descrip type="subjectField">does not belong in aux</descrip>
   <text>
     <body>
       <termEntry id="c1">
-		  
+		  <revisionDesc>a</revisionDesc>
         <descrip type="subjectField">manufacturing</descrip>
 		<descrip type="definition">what</descrip>
 		<refObject>does not belong in a term Entry <hi>at all</hi> you know</refObject>
@@ -37,8 +38,10 @@
           <term>not here</term>
 		  <date>2007-07-22</date>
         </transacGrp>
+		
         <transacGrp>
           <transac type="transactionType">modification</transac>
+		  <ngaaaaaaaa/>
           <sourceDesc><p>does not belong in term Either</p>
 		  <transacNote target="US5002" type="responsibility">John</transacNote>
 	  </sourceDesc>
@@ -117,6 +120,7 @@
             <xref target="wikipedia.org" type="externalCrossReference">Wikipedia web site</xref>
           </tig>
         </langSet>
+		
       </termEntry>
     </body>
     <back>
