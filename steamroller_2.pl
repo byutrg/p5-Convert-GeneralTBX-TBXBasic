@@ -12,8 +12,8 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.39;
-#Added a checker for picklist values
+my $version = 2.391;
+#Bugfix, adds log support for picklist checking
 
 my $dev = 1;
 my $verbose = 0;
@@ -622,6 +622,7 @@ sub log_init {
 		'p_code'	=> 0,
 		'p_fate'	=> 0,
 		'text'		=> '', #has to be retrieved later
+		't_code'	=> 0,
 		't_fate'	=> 0,
 		'atts' 		=> {}, #populated in while statement
 		'other'		=> [], #stores changes that don't correspond to existing data
@@ -895,12 +896,13 @@ sub child_check {
 		unless (grep {$child->text_only() eq $_} @{$target}) {
 			print "Text should not be ",$child->text(),"!\n";
 			my $guess;
-			if ($guess = autocorrect($child->text(),	$target,[],$g_t)) 
+			if ($guess = autocorrect($child->text(),$target,[],$g_t/2)) 
 			{
 				print "I guess $guess\n";
 			}
+			
 			#other possibilities of defining $guess can be added here if desired
-			if (defined $guess) {
+			if ($guess) {
 				foreach my $out (grep {place_check($_)} $child->children()) {
 					if ($child->parent()) 
 					{
@@ -920,9 +922,15 @@ sub child_check {
 					}
 				}
 				$child->set_text($guess);
+				if ($log->{$child}) {
+					$log->{$child}{'t_code'} = "PICKLIST";
+					$log->{$child}{'t_fate'} = $guess;
+				}
 				return $child->parent() // 0;
 			}
 			
+			#on failure to fix
+			return dump_truck($t,$child,$log,0,"PICKLIST");
 			
 		}
 		
@@ -1027,8 +1035,9 @@ sub place_check {
 		$cname = $child->att('type') // $child->name(); #this default should not trigger
 	}
 	elsif ($child->name() eq 'descripGrp') {
-
-		$cname = $child->first_child('descrip')->att('type') // $child->name(); #ditto
+		print $child->first_child()->name(),"\n";
+		$cname = $child->first_child('descrip')?
+		$child->first_child('descrip')->att('type') : $child->name(); 
 	}
 	$cname //= $child->name();
 	
@@ -1351,8 +1360,11 @@ sub order_check {
 						push @children,$child;
 					}
 					elsif ($item eq "CHILDREN") {
-						child_check($t,$section,$child,$log);
+						
 						push @children,$child->children();
+						if (my $temp =child_check($t,$section,$child,$log)) {
+							push @children,$temp;
+						}
 					}
 					elsif ($item eq "NEW")
 					{
@@ -1368,8 +1380,11 @@ sub order_check {
 			print "\n";
 		}
 		else {
-			child_check($t, $section,$child,$log);			
+					
 			push @children, $child->children();
+			if (my $temp =child_check($t,$section,$child,$log)) {
+				push @children,$temp;
+			}
 
 		}
 		
@@ -1621,6 +1636,16 @@ sub print_log {
 				$log{$section}->{'p_fate'} ? $log{$section}->{'p_fate'} :'';
 			}
 			
+		}
+		
+		if (my $code = $log{$section}->{'t_code'}) {
+			
+			if ($code eq 'PICKLIST') {
+				$i .= sprintf "%s had wrong picklist value, changed%s to %s.\n",
+				$log{$section}->{'name'},
+				$log{$section}->{'text'} ? " from ".$log{$section}->{'text'} : '',
+				$log{$section}->{'t_fate'};
+			}
 		}
 		
 		my @others = @{$log{$section}{'other'}};
