@@ -12,8 +12,8 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.38;
-#finishes relocator
+my $version = 2.39;
+#Added a checker for picklist values
 
 my $dev = 1;
 my $verbose = 0;
@@ -31,44 +31,44 @@ my %aux_log;
 my %term_log;
 
 my %comp=(
-0 => ['martif'],
-'martif' => ['martifHeader','text'],
-'martifHeader' => ['fileDesc','encodingDesc','revisionDesc'],
-'fileDesc' => ['titleStmt','publicationStmt','sourceDesc'],
-'p' => ['#PCDATA'],
-'titleStmt' => ['title','note'],          
-'title' => ['#PCDATA'],                   
-'publicationStmt' => ['p'],               
-'sourceDesc' => ['p'],                    
-'encodingDesc' => ['p'],                  
-'revisionDesc' => ['change'],             
-'change' =>	['p'],                        
-'text' => ['body','back'],                
-'body' => ['termEntry'],
-'back' => ['refObjectList'],
-'refObjectList' => ['refObject'],
-'refObject' => ['item'],
-'item' => ['#PCDATA','hi','foreign','bpt','ept','ph'],
-'termEntry' => [qw(langSet descrip descripGrp admin transacGrp note ref xref)],
-'langSet' => [qw(tig descrip descripGrp admin transacGrp note ref xref)],
-'tig' => [qw(term termNote descrip descripGrp admin transacGrp note ref xref)],
-'term' => ["#PCDATA", qw(hi)],
-'termNote' => ["#PCDATA", qw(hi foreign bpt ept ph)],
-'descrip' => ["#PCDATA", qw(hi foreign bpt ept ph)],
-'descripGrp' => [qw(descrip admin)],
-'admin' => ["#PCDATA", qw(hi foreign bpt ept ph)],
-'transacGrp' => [qw(transac transacNote date)],
-'note' => ["#PCDATA", qw(hi foreign bpt ept ph)],
-'ref' => ["#PCDATA"],
-'xref' => ["#PCDATA"],
-'transac' => ["#PCDATA", qw(hi foreign bpt ept ph)],
-'transacNote' => ["#PCDATA", qw(hi foreign bpt ept ph)],
-'date' => ["#PCDATA"],
-'hi' => ["#PCDATA"],
-'foreign' => ["#PCDATA", qw(hi foreign bpt ept ph)],
-'bpt' => ["#PCDATA"],
-'ept' => ["#PCDATA"],
-'ph' => ["#PCDATA"],
+0 					=> ['martif'],
+'martif' 			=> ['martifHeader','text'],
+'martifHeader' 		=> ['fileDesc','encodingDesc','revisionDesc'],
+'fileDesc' 			=> ['titleStmt','publicationStmt','sourceDesc'],
+'p' 				=> ['#PCDATA'],
+'titleStmt' 		=> ['title','note'],          
+'title' 			=> ['#PCDATA'],                   
+'publicationStmt' 	=> ['p'],               
+'sourceDesc' 		=> ['p'],                    
+'encodingDesc' 		=> ['p'],                  
+'revisionDesc' 		=> ['change'],             
+'change' 			=> ['p'],                        
+'text' 				=> ['body','back'],                
+'body' 				=> ['termEntry'],
+'back' 				=> ['refObjectList'],
+'refObjectList' 	=> ['refObject'],
+'refObject' 		=> ['item'],
+'item' 				=> ['#PCDATA','hi','foreign','bpt','ept','ph'],
+'termEntry' 		=> [qw(langSet descrip descripGrp admin transacGrp note ref xref)],
+'langSet' 				=> [qw(tig descrip descripGrp admin transacGrp note ref xref)],
+'tig'		  => [qw(term termNote descrip descripGrp admin transacGrp note ref xref)],
+'term' 				=> ["#PCDATA", qw(hi)],
+'termNote' 			=> ["#PCDATA", qw(hi foreign bpt ept ph)],
+'descrip' 			=> ["#PCDATA", qw(hi foreign bpt ept ph)],
+'descripGrp' 		=> [qw(descrip admin)],
+'admin' 			=> ["#PCDATA", qw(hi foreign bpt ept ph)],
+'transacGrp' 		=> [qw(transac transacNote date)],
+'note' 				=> ["#PCDATA", qw(hi foreign bpt ept ph)],
+'ref' 				=> ["#PCDATA"],
+'xref' 				=> ["#PCDATA"],
+'transac' 			=> ["#PCDATA", qw(hi foreign bpt ept ph)],
+'transacNote' 		=> ["#PCDATA", qw(hi foreign bpt ept ph)],
+'date' 				=> ["#PCDATA"],
+'hi' 				=> ["#PCDATA"],
+'foreign' 			=> ["#PCDATA", qw(hi foreign bpt ept ph)],
+'bpt' 				=> ["#PCDATA"],
+'ept' 				=> ["#PCDATA"],
+'ph' 				=> ["#PCDATA"],
 );
 
 #hash of all allowed attributes by element
@@ -304,6 +304,19 @@ my %req_kids = (
 'refObjectList' 	=> [qw(refObject)],
 'refObject' 		=> [qw(item)],
 '#PCDATA'			=> []
+);
+
+my %picklist = (
+"administrativeStatus" 		=> [qw(preferredTerm-admn-sts admittedTerm-admn-sts
+								deprecatedTerm-admn-sts supersededTerm-admn-sts)],
+"grammaticalGender"         => [qw(masculine feminine neuter other)],
+
+"partOfSpeech"              => [qw(noun verb adjective adverb properNoun other)],
+
+"termType"                  => [qw(abbreviation acronym fullForm
+										shortForm variant phrase)],
+"transactionType"           => [qw(origination modification)],
+
 );
 
 my %adopt = (
@@ -876,7 +889,45 @@ sub dca_check {
 sub child_check {
 	my ($t, $section, $child, $log) = @_;
 	my $cname = $child->name();
-	if (my $req = $req_kids{$cname}) {
+	if (my $type = $child->att('type') and 
+		   my $target = $picklist{$child->att('type')}) {
+		print $cname,"\t",$type,"\n";
+		unless (grep {$child->text_only() eq $_} @{$target}) {
+			print "Text should not be ",$child->text(),"!\n";
+			my $guess;
+			if ($guess = autocorrect($child->text(),	$target,[],$g_t)) 
+			{
+				print "I guess $guess\n";
+			}
+			#other possibilities of defining $guess can be added here if desired
+			if (defined $guess) {
+				foreach my $out (grep {place_check($_)} $child->children()) {
+					if ($child->parent()) 
+					{
+						$out->move($child->parent());
+						if ($log->{$out}) 
+						{
+							$log->{$out}{'p_code'} = "PICKLIST";
+							$log->{$out}{'p_fate'} = $child->parent()->name();
+						} 
+					}
+					else
+					{
+						if ($log->{$out}) {
+							$log->{$out}{'p_code'} = "PICKLIST";
+							$log->{$out}{'p_fate'} = "trash";
+						}
+					}
+				}
+				$child->set_text($guess);
+				return $child->parent() // 0;
+			}
+			
+			
+		}
+		
+	}
+	elsif (my $req = $req_kids{$cname}) {
 		foreach my $kname (@{$req}) {
 			unless ($child->has_child($kname)) {
 				my @to_do = @{$adopt{$cname}};
@@ -901,7 +952,7 @@ sub child_check {
 							if defined $log->{$child};
 							
 							$oliver->move(first_child=>$child);
-							return 1;
+							return $oliver;
 						} 
 					}
 					elsif ($action eq 'look') 
@@ -920,7 +971,7 @@ sub child_check {
 							push $log->{$child}{'other'},"FOUND", 
 							$oliver,$oliver->parent();
 							$oliver->move(first_child=>$child);
-							return 1;
+							return $oliver;
 						} 
 					
 					}
@@ -929,7 +980,7 @@ sub child_check {
 						$child->erase();
 						$log->{$child}{'n_code'} = "NOKID";
 						$log->{$child}{'n_fate'} = $kname;
-						return 1;
+						return 0;
 						#perhaps run through eraser when one is made
 					}
 					elsif (grep {$action eq $_} @{$atts{$kname}}) {
@@ -948,7 +999,7 @@ sub child_check {
 				
 				do {
 					$entry = $entry->parent();
-					return 1 unless defined $entry;
+					return 0 unless defined $entry;
 					
 				} until (defined $log->{$entry});
 				push $log->{$entry}{'other'}, 
@@ -958,7 +1009,8 @@ sub child_check {
 			}
 		}
 	}
-	return 1;
+	
+	return 0;
 }
 
 sub place_check {
@@ -975,6 +1027,7 @@ sub place_check {
 		$cname = $child->att('type') // $child->name(); #this default should not trigger
 	}
 	elsif ($child->name() eq 'descripGrp') {
+
 		$cname = $child->first_child('descrip')->att('type') // $child->name(); #ditto
 	}
 	$cname //= $child->name();
@@ -1020,8 +1073,6 @@ sub sib_check {
 
 my $default_term = XML::Twig::Elt->new('termEntry');
 sub relocate {
-	#maybe better just inside order_check
-	#placeholder for now
 	
 	my ($t,$section,$child,$log) = @_;
 	my $cname = $child->name();
@@ -1043,7 +1094,7 @@ sub relocate {
 				$child->move($default_term);
 			} else {
 				print "Dumping in this termEntry.\n";
-				dump_truck($t,$child,$log,'',"RELOCATE");
+				return ["NEW",dump_truck($t,$child,$log,'',"RELOCATE")];
 			}
 		}
 		elsif ($com eq 'rise') {
@@ -1300,6 +1351,7 @@ sub order_check {
 						push @children,$child;
 					}
 					elsif ($item eq "CHILDREN") {
+						child_check($t,$section,$child,$log);
 						push @children,$child->children();
 					}
 					elsif ($item eq "NEW")

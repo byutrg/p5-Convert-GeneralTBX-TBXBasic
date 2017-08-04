@@ -9,14 +9,10 @@
       <p type="XCSURI">TBXBasicXCSV02.xcs</p>
     </encodingDesc>
   </martifHeader>
-  <langSet xml:lang="mon">
-	  <term>mongol</term>
-  </langSet>
   <text>
     <body>
       <termEntry id="c1">
-		  
-        <descrip type="context">manufacturing</descrip>
+        <descrip type="subjectField">manufacturing</descrip>
         <descripGrp>
           <descrip type="definition">This is a sample definition at the entry level.</descrip>
           <admin type="source">Terminology SIG</admin>
@@ -26,8 +22,6 @@
           <transacNote target="US5001" type="responsibility">Jane</transacNote>
           <date>2007-07-22</date>
         </transacGrp>
-	    <martifHeader/>
-	    <martif xml:lang="en-UK"/>
         <transacGrp>
           <transac type="transactionType">modification</transac>
           <transacNote target="US5002" type="responsibility">John</transacNote>
@@ -40,10 +34,12 @@
         <langSet xml:lang="en">
           <tig>
             <term>scheduled operation</term>
-            <termNote type="partOfSpeech">preposition</termNote>
+            <termNote type="partOfSpeech">
+				<note>noun</note>
+			</termNote>
             <termNote type="termType">fullForm</termNote>
-            <termNote type="grammaticalGender">masculine</termNote>
-            <termNote type="administrativeStatus">preferredTerm-admn-sts</termNote>
+            <termNote type="grammaticalGender">male_<hi>masculine</hi>_gender</termNote>
+            <termNote type="administrativeStatus">PreferredTerm_Admn_Sts</termNote>
             <termNote type="geographicalUsage">Canada</termNote>
             <termNote type="termLocation">menuItem</termNote>
             <descripGrp>
