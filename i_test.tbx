@@ -43,7 +43,7 @@
             <termNote type="geographicalUsage">Canada</termNote>
             <termNote type="termLocation">menuItem</termNote>
             <descripGrp>
-              <descrip type="context">One hour is required between scheduled operations.</descrip>
+              <descrip type="context"></descrip>
               <admin type="source">Tivoli Storage Manager Administrator's Guide</admin>
             </descripGrp>
             <admin type="customerSubset">IBM</admin>

@@ -12,8 +12,8 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.391;
-#Bugfix, adds log support for picklist checking
+my $version = 2.40;
+#Adds order checking
 
 my $dev = 1;
 my $verbose = 0;
@@ -303,7 +303,18 @@ my %req_kids = (
 'back' 				=> [qw(refObjectList)],
 'refObjectList' 	=> [qw(refObject)],
 'refObject' 		=> [qw(item)],
-'#PCDATA'			=> []
+'#PCDATA'			=> [],
+'hi'			    => ['#PCDATA'],
+'bpt'               => ['#PCDATA'],
+'ept'               => ['#PCDATA'],
+'ph'                => ['#PCDATA'],
+'date'              => ['#PCDATA'],
+'ref'               => ['#PCDATA'],
+'transac'           => ['#PCDATA'],
+'transacNote'       => ['#PCDATA'],
+'xref'              => ['#PCDATA'],
+'title'             => ['#PCDATA'],
+
 );
 
 my %picklist = (
@@ -338,11 +349,36 @@ my %adopt = (
 'back' 				=> [qw(look type respPerson)],
 'refObjectList' 	=> [qw(look id Steamroller)],
 'refObject' 		=> [qw(look type fn),"Steamroller Version $version."],
+'hi'			    => ["kill"],
+'bpt'               => ["kill"],
+'ept'               => ["kill"],
+'ph'                => ["kill"],
+'date'              => ["kill"],
+'ref'               => ["kill"],
+'transac'           => ["kill"],
+'transacNote'       => ["kill"],
+'xref'              => ["kill"],
+'title'             => ["kill"],
+
+
 );
 
 my @unique = #PCDATA not unique because it stacks!
 ('transac','martifHeader','text','fileDesc','title','body','descrip','term',
 'encodingDesc','revisionDesc','titleStmt','publicationStmt','back');
+
+my %elt_order = (
+'martif'			=> [qw(martifHeader text)],
+'martifHeader'    	=> [qw(fileDesc encodingDesc revisionDesc)],
+'text'            	=> [qw(body back)],
+'fileDesc'        	=> [qw(titleStmt publicationStmt sourceDesc)],
+'titleStmt'       	=> [qw(title note)],
+'termEntry'       	=> [qw(descrip descripGrp admin transacGrp note ref xref langSet)],
+'langSet' 		  	=> [qw(descrip descripGrp admin transacGrp note ref xref tig)],
+'tig' => [qw(term termNote descrip descripGrp admin transacGrp note ref xref )],
+'descripGrp' 	  	=> [qw(descrip admin)],
+'transacGrp' 	  	=> [qw(transac transacNote date)],
+);
 
 #a reference for things that can only go in termEntry or outside of one
 my @term_elts = (
@@ -554,7 +590,7 @@ sub dump_truck {
 	unless ($att) {
 		#continue to extract data from atts
 		#write error messages
-		print "*"x10,$section->name(),$section->atts(),"-","\n";
+#		print "*"x10,$section->name(),$section->atts(),"-","\n";
 		if ($section->atts())
 		{
 			foreach my $a (keys $section->atts()) {
@@ -890,15 +926,36 @@ sub dca_check {
 sub child_check {
 	my ($t, $section, $child, $log) = @_;
 	my $cname = $child->name();
+	
+	if (my $order = $elt_order{$cname}) {
+		print "Order list found for $cname.\n";
+		print $log->{$child}{'line'},"\n" if  $log->{$child};
+		print "It is $order.\n";
+		
+		$child->sort_children(
+		sub 
+		{
+			for my $i (0..$#{$order}) 
+			{
+				print $i, $order->[$i],$_->name(),"\n",;
+				return $i if $order->[$i] eq $_->name();
+			}
+			return $#{$order}+1;
+		}, 
+		type => 'numeric');
+		print "\n";
+	}
+	
 	if (my $type = $child->att('type') and 
-		   my $target = $picklist{$child->att('type')}) {
-		print $cname,"\t",$type,"\n";
+	    my $target = $picklist{$child->att('type')}) 
+	{
+#		print $cname,"\t",$type,"\n";
 		unless (grep {$child->text_only() eq $_} @{$target}) {
-			print "Text should not be ",$child->text(),"!\n";
+#			print "Text should not be ",$child->text(),"!\n";
 			my $guess;
 			if ($guess = autocorrect($child->text(),$target,[],$g_t/2)) 
 			{
-				print "I guess $guess\n";
+#				print "I guess $guess\n";
 			}
 			
 			#other possibilities of defining $guess can be added here if desired
@@ -1035,7 +1092,7 @@ sub place_check {
 		$cname = $child->att('type') // $child->name(); #this default should not trigger
 	}
 	elsif ($child->name() eq 'descripGrp') {
-		print $child->first_child()->name(),"\n";
+#		print $child->first_child()->name(),"\n";
 		$cname = $child->first_child('descrip')?
 		$child->first_child('descrip')->att('type') : $child->name(); 
 	}
@@ -1747,6 +1804,15 @@ twig_handlers 		=> {
 $twig->set_id_seed('s');
 
 $twig->parsefile($file);
+
+unless ($twig->doctype()=~/TBXBasiccoreStructV02/) 
+
+{
+	printf $lf "Setting doctype declaration to TBXBasiccoreStructV02.dtd.\n";
+	$twig->set_doctype('martif',"TBXBasiccoreStructV02.dtd");
+	
+}
+
 #change to safeparse so that something can be written to the logfile instead
 
 #print logfile sorted by linenumber of original
@@ -1775,17 +1841,18 @@ foreach my $line (split(/\n/,$auxilliary)) {
 		
 		while (<$tft>) 
 		{
-			print $out "$_" if ($_ ne "\n");
+			print $out "      $_" if ($_ ne "\n");
 		}
 		
 		$line =~ s!<body>!</body>!;
-		print $out "\n",$line;
+		print $out $line;
 		
 	}
 	
 	else 
 	
 	{
+		$line =~ s!\?><!\?>\n<!g;
 		print $out $line;
 	}
 	
