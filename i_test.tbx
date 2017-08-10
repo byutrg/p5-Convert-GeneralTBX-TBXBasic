@@ -5,9 +5,11 @@
         <p>This is a sample TBX-Basic file</p>
       </sourceDesc>
     </fileDesc>
-    <encodingDesc>
+    <p><p><p>
+	<encodingDesc>
       <p type="XCSURI">TBXBasicXCSV02.xcs</p>
     </encodingDesc>
+</p></p></p>
   </martifHeader>
   <text>
     <body>

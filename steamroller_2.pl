@@ -1419,7 +1419,6 @@ sub order_check {
 					elsif ($item eq "CHILDREN") {
 						
 						push @children,$child->children();
-						if (my $temp =child_check($t,$section,$child,$log)) {
 							push @children,$temp;
 						}
 					}
@@ -1437,7 +1436,6 @@ sub order_check {
 			print "\n";
 		}
 		else {
-					
 			push @children, $child->children();
 			if (my $temp =child_check($t,$section,$child,$log)) {
 				push @children,$temp;
