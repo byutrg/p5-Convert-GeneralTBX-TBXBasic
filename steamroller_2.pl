@@ -12,8 +12,9 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.41;
+my $version = 2.42;
 #fixes a few bugs, others remain
+#fixes a bug which caused some descrip levels to not be controlled
 
 my $dev = 1;
 my $verbose = 0;
@@ -1146,7 +1147,7 @@ sub relocate {
 	
 	my ($t,$section,$child,$log) = @_;
 	my $cname = $child->name();
-	
+	print $log->{$child}{'line'},"\n" if $log->{$child};
 	my @exec = @{$locations{$cname}};
 	#print join(' ',@exec),"\n\n";
 	my @group;
@@ -1164,7 +1165,16 @@ sub relocate {
 				$child->move($default_term);
 			} else {
 				#print "Dumping in this termEntry.\n";
-				return ["NEW",dump_truck($t,$child,$log,'',"RELOCATE")];
+	print "dump!\n";
+	
+				my @out;
+				foreach my $temp ($child->children()) {
+					push @out, "NEW", $temp;
+				}
+				
+				push @out,"NEW",dump_truck($t,$child,$log,'',"RELOCATE");
+				return \@out;
+				
 			}
 		}
 		elsif ($com eq 'rise') {
@@ -1435,7 +1445,7 @@ sub order_check {
 					{
 						
 						push @children, shift @{$result};
-												
+						print $children[-1]->name(),"\n";						
 					}
 					else {
 						#print "Order_check was not expecting $item.\n";
