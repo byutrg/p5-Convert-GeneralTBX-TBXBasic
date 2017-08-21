@@ -12,8 +12,8 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.40;
-#Adds order checking
+my $version = 2.41;
+#fixes a few bugs, others remain
 
 my $dev = 1;
 my $verbose = 0;
@@ -288,7 +288,7 @@ my %req_kids = (
                 	
 'martif' 			=> [qw(martifHeader text)],
 'martifHeader' 		=> [qw(fileDesc)],
-'fileDesc' 			=> [qw(sourceDesc)],
+'fileDesc' 			=> [qw(sourceDesc encodingDesc)],
 'titleStmt' 		=> [qw(title)],
 
 'publicationStmt' 	=> [qw(p)],
@@ -928,22 +928,22 @@ sub child_check {
 	my $cname = $child->name();
 	
 	if (my $order = $elt_order{$cname}) {
-		print "Order list found for $cname.\n";
-		print $log->{$child}{'line'},"\n" if  $log->{$child};
-		print "It is $order.\n";
+		#print "Order list found for $cname.\n";
+		#print $log->{$child}{'line'},"\n" if  $log->{$child};
+		#print "It is $order.\n";
 		
 		$child->sort_children(
 		sub 
 		{
 			for my $i (0..$#{$order}) 
 			{
-				print $i, $order->[$i],$_->name(),"\n",;
+				#print $i, $order->[$i],$_->name(),"\n",;
 				return $i if $order->[$i] eq $_->name();
 			}
 			return $#{$order}+1;
 		}, 
 		type => 'numeric');
-		print "\n";
+		#print "\n";
 	}
 	
 	if (my $type = $child->att('type') and 
@@ -996,6 +996,8 @@ sub child_check {
 		foreach my $kname (@{$req}) {
 			unless ($child->has_child($kname)) {
 				my @to_do = @{$adopt{$cname}};
+				
+				#print $kname, join(" ",@to_do),"\n";
 				my $kid = XML::Twig::Elt->new($kname);
 				#print "$cname\n";
 				while (my $action = shift @to_do) {
@@ -1050,6 +1052,7 @@ sub child_check {
 					}
 					elsif (grep {$action eq $_} @{$atts{$kname}}) {
 						my $val = shift @to_do;
+						
 						$kid->set_att($action=>$val);
 						#attach it to $kid
 					}
@@ -1059,6 +1062,7 @@ sub child_check {
 						$kid->set_text($action);
 					}
 				}
+				#print $kid->name()," $cname,\n";
 				$kid->paste(first_child=>$child);
 				my $entry = $kid;
 				
@@ -1069,7 +1073,7 @@ sub child_check {
 				} until (defined $log->{$entry});
 				push $log->{$entry}{'other'}, 
 				$entry == $child? "MISSING" : "CREATED", $kid, $child;
-#				print "here\n";
+				return $kid;			
 
 			}
 		}
@@ -1152,19 +1156,19 @@ sub relocate {
 		if ($com eq 'defaultTerm') {
 			
 			if ($log eq \%aux_log) {
-				print "Moving to a default termEntry.\n";
+				#print "Moving to a default termEntry.\n";
 				if ($log->{$child}) {
 					$log->{$child}{'p_code'} = "RELOCATE";
 					$log->{$child}{'p_fate'} = "default termEntry";
 				}
 				$child->move($default_term);
 			} else {
-				print "Dumping in this termEntry.\n";
+				#print "Dumping in this termEntry.\n";
 				return ["NEW",dump_truck($t,$child,$log,'',"RELOCATE")];
 			}
 		}
 		elsif ($com eq 'rise') {
-			print "✓ Rising until valid.\n";
+			#print "✓ Rising until valid.\n";
 			
 			my $target = $child;
 			
@@ -1189,9 +1193,9 @@ sub relocate {
 			#my $loser = shift @exec if $com eq 'merge';
 			
 			#debug statement
-			$com eq 'merge' ? 
-			print "✓ Fighting for spot in $target\n":
-			print "✓ Looking for $target.\n";
+			#$com eq 'merge' ? 
+			#print "✓ Fighting for spot in $target\n":
+			#print "✓ Looking for $target.\n";
 			
 			if ($log eq \%term_log) {
 				my @out = ();
@@ -1280,7 +1284,7 @@ sub relocate {
 			
 		}
 		elsif ($com eq 'handle') {
-			print "✓ Processing as a termEntry.\n";
+			#print "✓ Processing as a termEntry.\n";
 			foreach my $elt ($child->descendants_or_self()) {
 				$elt->sprint(); #why on earth does this fix it? initializes something...
 				term_log_init($t,$elt);
@@ -1291,7 +1295,7 @@ sub relocate {
 		}
 		elsif ($com eq 'convert') {
 #			print "\n"x10;
-			print "✓ Converting $cname PCDATA.\n";
+			#print "✓ Converting $cname PCDATA.\n";
 #			$child->parent()->print();
 			#what if...
 			if (my $fate = $pcstorage{$child->parent()->name()}) {
@@ -1325,9 +1329,9 @@ sub relocate {
 					$child->set_att('type'=>'source');
 					return ["SELF"];
 				} else {
-					print "convert was not expecting $fate.\n";
+					#print "convert was not expecting $fate.\n";
 				}
-				print "\n"x10;
+				#print "\n"x10;
 				
 			}
 			
@@ -1344,7 +1348,7 @@ sub relocate {
 			while ($exec[0] ne 'pack') {
 				push @get_list, shift @exec;
 			}
-			print "✓ Gathering neighbors, ".join(" ",@get_list)."\n";
+			#print "✓ Gathering neighbors, ".join(" ",@get_list)."\n";
 			
 			my $target = $child;
 			
@@ -1366,7 +1370,7 @@ sub relocate {
 		}
 		elsif ($com eq 'pack') {
 			my $target = shift @exec;
-			print "✓ Wrapping in a $target element.\n";
+			#print "✓ Wrapping in a $target element.\n";
 			my $parent = $child->wrap_in($target);
 			if ($log->{$child}) {
 				$log->{$child}{'p_code'} = "PACKED";
@@ -1375,11 +1379,12 @@ sub relocate {
 			while (my $a = shift @group) {
 				$a->move(last_child=>$parent);
 			}
-			return ["NEW",$parent];
+			#return ["NEW",$parent];
+			return ["CHILDREN"];
 		}
 		else 
 		{
-			print "Relocator was not expecting $com.\n";
+			#print "Relocator was not expecting $com.\n";
 		}
 		
 	}
@@ -1403,8 +1408,8 @@ sub order_check {
 		
 		{
 #			print "^^^",$child->name(),")\n";
-			printf "%s %s %s %s\n", $log->{$child}?$log->{$child}{'line'}:'',
-			$child->name(), $code, join(' ',@{$locations{$child->name()}});
+			#printf "%s %s %s %s\n", $log->{$child}?$log->{$child}{'line'}:'',
+			#$child->name(), $code, join(' ',@{$locations{$child->name()}});
 			
 			if (my $result = relocate($t,$section,$child,$log)) 
 			#currently, if relocate fails, it should just return the child?
@@ -1415,27 +1420,36 @@ sub order_check {
 					
 					if ($item eq "SELF") {
 						push @children,$child;
+						
 					}
 					elsif ($item eq "CHILDREN") {
 						
 						push @children,$child->children();
+						if (my $temp =child_check($t,$section,$child->parent(),$log)) {
+							print "==",$temp->name(),"\n";
 							push @children,$temp;
 						}
+						
 					}
 					elsif ($item eq "NEW")
 					{
+						
 						push @children, shift @{$result};
+												
 					}
 					else {
-						print "Order_check was not expecting $item.\n";
+						#print "Order_check was not expecting $item.\n";
 					}
 				}
 				
+				
+				
 			
 			}
-			print "\n";
+			#print "\n";
 		}
 		else {
+#			print "--",$cname, $log->{$child} ? $log->{$child}{'line'}:'',"\n";		
 			push @children, $child->children();
 			if (my $temp =child_check($t,$section,$child,$log)) {
 				push @children,$temp;
@@ -1488,13 +1502,13 @@ sub handle_term {
 		}
 	}
 	
-	prereq($t,$section,\%term_log);
-	
 	unless (dca_check($t,$section,\%term_log)) {
 		
 			dump_truck($t,$section,\%term_log,);
 		
 	}
+	
+	prereq($t,$section,\%term_log);
 	
 	return 1;
 }
@@ -1569,9 +1583,9 @@ sub order_root {
 	my ($t,$section) = @_;
 	
 	handle_aux(@_);
+	
 	order_check(@_,\%aux_log);
 	
-
 	return 1;
 }
 
