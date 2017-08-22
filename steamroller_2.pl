@@ -12,9 +12,8 @@ use String::Similarity;
 #lower tolerance makes bolder guesses, more mistakes
 my $g_t = $ARGV[1] // 0.4;
 
-my $version = 2.42;
-#fixes a few bugs, others remain
-#fixes a bug which caused some descrip levels to not be controlled
+my $version = 2.43;
+#adds simple UI for testing purposes
 
 my $dev = 1;
 my $verbose = 0;
@@ -1436,7 +1435,7 @@ sub order_check {
 						
 						push @children,$child->children();
 						if (my $temp =child_check($t,$section,$child->parent(),$log)) {
-							print "==",$temp->name(),"\n";
+							#print "==",$temp->name(),"\n";
 							push @children,$temp;
 						}
 						
@@ -1445,7 +1444,7 @@ sub order_check {
 					{
 						
 						push @children, shift @{$result};
-						print $children[-1]->name(),"\n";						
+						#print $children[-1]->name(),"\n";						
 					}
 					else {
 						#print "Order_check was not expecting $item.\n";
@@ -1788,8 +1787,11 @@ sub print_log {
 }
 
 $file = $ARGV[0];
-
-die "Provide a file!" unless ($file && $file =~ m/\.(tbx|xml|tbxm)\Z/ && -e $file);
+until ($file && $file =~ m/(tbx|xml|tbxm)\Z/ && -e $file) {
+	print "Please enter a valid tbx file:\n";
+	$file = <STDIN>;
+	chomp $file;
+}
 
 my $twig = XML::Twig->new(
 	
@@ -1845,9 +1847,16 @@ my $auxilliary = $twig->sprint();
 close($tft);
 open($tft,'<','temp_file_text.txt');
 
-my $out_name = $file;
-$out_name =~ s/(.+?)\..+/$1_steamroller.tbx/;
-$out_name = 'result.tbx' if $dev;
+#my $out_name = $file;
+#$out_name =~ s/(.+?)\..+/$1_steamroller.tbx/;
+print "Please enter a name for the output file, or press enter to print to result.tbx.\n";
+my $out_name = <STDIN>;
+chomp $out_name;
+unless ($out_name =~ m/\.tbx\Z/) {
+	print "nope!\n";
+	$out_name = 'result.tbx'
+}
+#'result.tbx' if $dev;
 
 open(my $out, ">:encoding(UTF-8)",$out_name);
 
