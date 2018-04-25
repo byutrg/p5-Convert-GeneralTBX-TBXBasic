@@ -1209,6 +1209,13 @@ sub location_control {
 		
 	}
 	
+	#change dialect name
+	if ($section->att('type') ne "TBX-Basic")
+	{
+		print $log "Changing dialect type to 'TBX-Basic'.\n";
+		$section->set_att('type' => 'TBX-Basic');
+	}
+	
 	#checks and fixes location of all children
 	my @children = $section->children();
 	my $child;
