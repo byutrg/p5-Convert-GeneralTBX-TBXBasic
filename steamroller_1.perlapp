@@ -1,17 +1,17 @@
-#!C:\Program Files\ActiveState Perl Dev Kit 9.5\bin\perlapp-gui.exe
+#!C:\Program Files\ActiveState Perl Dev Kit 9.5.1\bin\perlapp-gui.exe
 PAP-Version: 1.0
-Packer: C:\Program Files\ActiveState Perl Dev Kit 9.5\bin\perlapp.exe
+Packer: C:\Program Files\ActiveState Perl Dev Kit 9.5.1\bin\perlapp.exe
 Script: steamroller_1.pl
 Cwd: Z:\Users\Serdo\git\p5-Convert-GeneralTBX-TBXBasic
 Clean: 0
-Date: 2017-06-22 11:22:05
+Date: 2018-04-25 15:28:59
 Debug: 
 Dependent: 0
 Dyndll: 0
 Exe: steamroller_1.exe
 Force: 0
 Gui: 0
-Hostname: SERDO-DESKTOP
+Hostname: Serdo-Desktop
 Manifest: 
 No-Compress: 0
 No-Logo: 0
@@ -28,6 +28,6 @@ Version-LegalCopyright: Perl 5
 Version-LegalTrademarks: 
 Version-OriginalFilename: 
 Version-ProductName: Generic TBX to TBX-Basic Converter
-Version-ProductVersion: 0.1
+Version-ProductVersion: 0.2
 Warnings: 0
 Xclude: 0

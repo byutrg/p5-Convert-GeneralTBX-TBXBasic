@@ -245,7 +245,7 @@ my %atts=(
 'descripGrp' 	  => [qw(id)],
 'admin' 		  => [qw(id xml:lang type target datatype)],
 'transacGrp' 	  => [qw(id)],
-'note' 			  => [qw(id)],
+'note' 			  => [qw(id xml:lang)],
 'ref' 			  => [qw(id xml:lang type target datatype)],
 'xref' 			  => [qw(id target type)],
 'transac' 		  => [qw(id xml:lang type target datatype)],
@@ -653,6 +653,21 @@ sub handle_term {
 					#rename it to be something that works
 					
 					$child->set_name($fate);
+					
+					if ($fate eq "note")
+					{
+						printf $log "Removing invalid attributes from <note> with text '%s' in $tid.\n", $child->text();
+						my @attNames = $child->att_names;
+						
+						foreach my $att ($child->att_names)
+						{
+							if ($atts{'note'} !~ $att)
+							{
+								$child->del_att($att);
+							}
+						}
+						
+					}
 					
 					#This code mistakenly mislables DCA data
 					#In current version, these problems are fixed in 'tidy' section'
@@ -1143,7 +1158,7 @@ sub location_control {
 	
 	#insert a placeholder for termEntries
 	#tells steamroller that placeholder belongs in 'body' element
-	push $comp{'body'}, 'placeholder';
+	push @{ $comp{'body'} }, 'placeholder';
 	$placeholder=XML::Twig::Elt->new('placeholder');
 	
 	#pastes to root, sorted in a second anyway.
