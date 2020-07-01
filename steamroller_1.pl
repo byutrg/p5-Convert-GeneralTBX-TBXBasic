@@ -1020,7 +1020,7 @@ sub name_check {
 		
 		printf $log "Data category '%s' cannot go in element '%s', changing att to '%s' and tag to '%s' in %s.\n",
 		$section->att('type'),$section->name(),$ntype,$concomp{$ntype},$line;
-		$section->set_att(type=>$ntype);
+		#$section->set_att(type=>$ntype); #caleb106 - Preserve att as is for storing in note. 
 		$section->set_name($concomp{$ntype});
 		$cname = $concomp{$ntype};
 		
