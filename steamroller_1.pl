@@ -663,7 +663,8 @@ sub handle_term {
 						{
 							if ($atts{'note'} !~ $att)
 							{
-								$child->del_att($att);
+								$child->set_text($child->att($att)."::".$child->text); #caleb106 Store attribute in value before deleting
+                                $child->del_att($att);
 							}
 						}
 						
