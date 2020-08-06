@@ -533,7 +533,7 @@ sub handle_term {
 			
 			#stores any invalid attributes as a note in termEntry
 			my $value = $section->att($m);
-			my $temp = XML::Twig::Elt->new('note'=>$m.":".$value);
+			my $temp = XML::Twig::Elt->new('note'=>$m."::".$value); #added second colon for distinction
 			$temp->paste(last_child=>$section);
 			store($temp);
 			$section->del_att($m);
@@ -656,7 +656,7 @@ sub handle_term {
 					
 					if ($fate eq "note")
 					{
-						printf $log "Removing invalid attributes from <note> with text '%s' in $tid.\n", $child->text();
+						printf $log "Storing invalid attributes from <note> with text '%s' in $tid.\n", $child->text(); #caleb106 - Store the attribute before they are removed
 						my @attNames = $child->att_names;
 						
 						foreach my $att ($child->att_names)
