@@ -1018,10 +1018,11 @@ sub name_check {
 	{ 			
 		#currently lossy
 		
-		printf $log "Data category '%s' cannot go in element '%s', changing att to '%s' and tag to '%s' in %s.\n",
+		printf $log "Data category '%s' cannot go in element '%s'. Maybe for the attribute you meant '%s' in the tag '%s' in %s.\n",
 		$section->att('type'),$section->name(),$ntype,$concomp{$ntype},$line;
 		$section->set_att(type=>$ntype);
-		$section->set_name($concomp{$ntype});
+		#$section->set_name($concomp{$ntype});
+        $section->set_name("note"); #caleb106 Set invalid element as note
 		$cname = $concomp{$ntype};
 		
 	}
