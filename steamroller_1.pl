@@ -218,7 +218,7 @@ my %renp=(
 
 #hash of all allowed attributes by element
 my %atts=(
-'tbx' 		  => ['type','xml:lang'],
+'tbx' 		  => ['style','type','xml:lang'], #caleb106 - added style attribute for v3
 'tbxHeader' 	  => ["id"],
 'fileDesc' 		  => ["id"],
 'p' 			  => ["id",'type','xml:lang'],
@@ -1484,7 +1484,7 @@ sub location_control {
 }
 
 $file = $ARGV[0];
-until ($file && $file =~ m/(tbx|xml|tbxm)\Z/ && -e $file) {
+until ($file && $file =~ m/(tbx|xml)\Z/ && -e $file) { #caleb106 Removed TBXm file extension 
 	print "Please enter a valid tbx file:\n";
 	$file = <STDIN>;
 	chomp $file;
@@ -1528,13 +1528,11 @@ $twig->parsefile($file);
 #steamroller should leave things alone unless they are wrong
 #unless ($twig->doctype()=~/TBXBasiccoreStructV02/) 
 
-#{
+#{ #caleb106 - Removed v2 Doctype declaration
 #	printf $log "Setting doctype declaration to TBXBasiccoreStructV02.dtd.\n";
 #	$twig->set_doctype('tbx',"TBXBasiccoreStructV02.dtd");
 	
 #}
-
-
 
 #stores the parsed non-conceptEntry data to a string
 my $auxilliary = $twig->sprint();
