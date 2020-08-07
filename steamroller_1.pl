@@ -865,7 +865,7 @@ sub handle_term {
 		#makes lang lower case, probably unnecessary
 		{
 			print $log "Reordering langSec in $tid.\n";
-			$child->move(last_child=>$child->parent());
+			#$child->move(last_child=>$child->parent()); #caleb106 - No reordering of langSec element
 			
 			my $lang =$child->att('xml:lang');
 
