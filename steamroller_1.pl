@@ -218,7 +218,7 @@ my %renp=(
 
 #hash of all allowed attributes by element
 my %atts=(
-'tbx' 		  => ['style','type','xml:lang'], #caleb106 - added style attribute for v3
+'tbx' 		  => ['style','type','xml:lang', 'xmlns'], #caleb106 - added style and xmlns attribute for v3
 'tbxHeader' 	  => ["id"],
 'fileDesc' 		  => ["id"],
 'p' 			  => ["id",'type','xml:lang'],
