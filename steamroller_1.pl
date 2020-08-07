@@ -1526,13 +1526,13 @@ $twig->parsefile($file);
 
 #set correct doctype if it is wrong
 #steamroller should leave things alone unless they are wrong
-unless ($twig->doctype()=~/TBXBasiccoreStructV02/) 
+#unless ($twig->doctype()=~/TBXBasiccoreStructV02/) 
 
-{
-	printf $log "Setting doctype declaration to TBXBasiccoreStructV02.dtd.\n";
-	$twig->set_doctype('tbx',"TBXBasiccoreStructV02.dtd");
+#{
+#	printf $log "Setting doctype declaration to TBXBasiccoreStructV02.dtd.\n";
+#	$twig->set_doctype('tbx',"TBXBasiccoreStructV02.dtd");
 	
-}
+#}
 
 
 
