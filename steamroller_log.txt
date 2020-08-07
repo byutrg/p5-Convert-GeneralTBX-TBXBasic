@@ -1,0 +1,8 @@
+Data category 'reliabilitycode' cannot go in element 'admin'. Maybe for the attribute you meant 'responsibility' in the tag 'transacNote' in conceptEntry c1 ending in line 27.
+Element transacNote has invalid name, renaming 'transacNote' in conceptEntry c1 ending in line 27.
+Renaming element 'transacNote' with text '10' to note in conceptEntry c1 ending in line 27.
+Storing invalid attributes from <note> with text '10' in conceptEntry c1 ending in line 27.
+Sorting termSec in conceptEntry c1 ending in line 27.
+Sorting termSec in conceptEntry c2 ending in line 34.
+Moving element placeholder to body
+Moving element sourceDesc to fileDesc
