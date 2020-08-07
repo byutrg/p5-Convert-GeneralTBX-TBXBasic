@@ -5,7 +5,7 @@ use strict;
 use XML::Twig;
 
 #Similarity compares two strings to see how similar they are
-#This is used to guess what an invalid element should be called (Term_Entry -> termEntry)
+#This is used to guess what an invalid element should be called (conceptEntry_Entry -> conceptEntry)
 use String::Similarity;
 
 #Used with Similarity to put a lower bound on guess validity.
@@ -17,7 +17,7 @@ my $tolerance = 0.4;
 my $version = 1.01;
 
 my $file;
-#opens temporary file to store termEntry elements
+#opens temporary file to store conceptEntry elements
 open (my $tft,'>','temp_file_text.txt'); 
 
 #opens logfile
@@ -25,8 +25,8 @@ open (my $log,'>','steamroller_log.txt');
 
 #initialize variables which store elements as they are encountered, used later for rearrangement
 my(
-$martif,
-$martifHeader,
+$tbx,
+$tbxHeader,
 $fileDesc,
 @p,
 $titleStmt,
@@ -41,13 +41,13 @@ $revisionDesc,
 $text,
 $body,
 $back,
-@refObjectList,
+@refObjectSec,
 @refObject,
 @item,
 $placeholder,
-@termEntry,
-@langSet,
-@tig,
+@conceptEntry,
+@langSec,
+@termSec,
 @term,
 @termNote,
 @descrip,
@@ -61,15 +61,15 @@ $placeholder,
 @date,
 @hi,
 @foreign,
-@bpt,
-@ept,
+@sc,
+@ec,
 @ph,
 );
 
 #hash of element names to the reference for their corresponding variable
 my %refs=(
-'martif' => \$martif,
-'martifHeader' => \$martifHeader,
+'tbx' => \$tbx,
+'tbxHeader' => \$tbxHeader,
 'fileDesc' => \$fileDesc,
 'p' =>\@p, 
 'titleStmt' => \$titleStmt,
@@ -84,13 +84,13 @@ my %refs=(
 'text' => \$text,
 'body' => \$body,
 'back' => \$back,
-'refObjectList' => \@refObjectList,
+'refObjectSec' => \@refObjectSec,
 'refObject' => \@refObject,
 'item' => \@item,
 'placeholder' => \$placeholder,
-'termEntry' => \@termEntry,
-'langSet' => \@langSet,
-'tig' => \@tig,
+'conceptEntry' => \@conceptEntry,
+'langSec' => \@langSec,
+'termSec' => \@termSec,
 'term' => \@term,
 'termNote' => \@termNote,
 'descrip' => \@descrip,
@@ -104,16 +104,16 @@ my %refs=(
 'date' => \@date,
 'hi' => \@hi,
 'foreign' => \@foreign,
-'bpt' => \@bpt,
-'ept' => \@ept,
+'sc' => \@sc,
+'ec' => \@ec,
 'ph' => \@ph,
 );
 
 #hash of element compatibility, mapped parent to child
 my %comp=(
-0 => ['martif'],
-'martif' => ['martifHeader','text'],
-'martifHeader' => ['fileDesc','encodingDesc','revisionDesc'],
+0 => ['tbx'],
+'tbx' => ['tbxHeader','text'],
+'tbxHeader' => ['fileDesc','encodingDesc','revisionDesc'],
 'fileDesc' => ['titleStmt','publicationStmt','sourceDesc'],
 'p' => ['#PCDATA'],
 'titleStmt' => ['title','note'],
@@ -124,37 +124,37 @@ my %comp=(
 'revisionDesc' => ['change'],
 'change' =>	['p'],
 'text' => ['body','back'],
-'body' => ['termEntry'],
-'back' => ['refObjectList'],
-'refObjectList' => ['refObject'],
+'body' => ['conceptEntry'],
+'back' => ['refObjectSec'],
+'refObjectSec' => ['refObject'],
 'refObject' => ['item'],
-'item' => ['#PCDATA','hi','foreign','bpt','ept','ph'],
-'termEntry' => [qw(langSet descrip descripGrp admin transacGrp note ref xref)],
-'langSet' => [qw(tig descrip descripGrp admin transacGrp note ref xref)],
-'tig' => [qw(term termNote descrip descripGrp admin transacGrp note ref xref)],
+'item' => ['#PCDATA','hi','foreign','sc','ec','ph'],
+'conceptEntry' => [qw(langSec descrip descripGrp admin transacGrp note ref xref)],
+'langSec' => [qw(termSec descrip descripGrp admin transacGrp note ref xref)],
+'termSec' => [qw(term termNote descrip descripGrp admin transacGrp note ref xref)],
 'term' => ["#PCDATA", qw(hi)],
-'termNote' => ["#PCDATA", qw(hi foreign bpt ept ph)],
-'descrip' => ["#PCDATA", qw(hi foreign bpt ept ph)],
+'termNote' => ["#PCDATA", qw(hi foreign sc ec ph)],
+'descrip' => ["#PCDATA", qw(hi foreign sc ec ph)],
 'descripGrp' => [qw(descrip admin)],
-'admin' => ["#PCDATA", qw(hi foreign bpt ept ph)],
+'admin' => ["#PCDATA", qw(hi foreign sc ec ph)],
 'transacGrp' => [qw(transac transacNote date)],
-'note' => ["#PCDATA", qw(hi foreign bpt ept ph)],
+'note' => ["#PCDATA", qw(hi foreign sc ec ph)],
 'ref' => ["#PCDATA"],
 'xref' => ["#PCDATA"],
-'transac' => ["#PCDATA", qw(hi foreign bpt ept ph)],
-'transacNote' => ["#PCDATA", qw(hi foreign bpt ept ph)],
+'transac' => ["#PCDATA", qw(hi foreign sc ec ph)],
+'transacNote' => ["#PCDATA", qw(hi foreign sc ec ph)],
 'date' => ["#PCDATA"],
 'hi' => ["#PCDATA"],
-'foreign' => ["#PCDATA", qw(hi foreign bpt ept ph)],
-'bpt' => ["#PCDATA"],
-'ept' => ["#PCDATA"],
+'foreign' => ["#PCDATA", qw(hi foreign sc ec ph)],
+'sc' => ["#PCDATA"],
+'ec' => ["#PCDATA"],
 'ph' => ["#PCDATA"],
 );
 
-#a list of elements which do not occur in a termEntry
+#a list of elements which do not occur in a conceptEntry
 my @aux_items=(
-'martif' ,
-'martifHeader' ,
+'tbx' ,
+'tbxHeader' ,
 'fileDesc' ,
 'p' ,
 'titleStmt' ,
@@ -166,17 +166,17 @@ my @aux_items=(
 'change' ,
 'text' ,
 'back' ,
-'refObjectList' ,
+'refObjectSec' ,
 'refObject' ,
 ); 
 
 #hash of element compatibiity, child to possible parents
 my %renp=(
-'martifHeader'    => 'martif',
-'text'            => 'martif',
-'fileDesc'        => 'martifHeader',
-'encodingDesc'    => 'martifHeader',
-'revisionDesc'    => 'martifHeader',
+'tbxHeader'    => 'tbx',
+'text'            => 'tbx',
+'fileDesc'        => 'tbxHeader',
+'encodingDesc'    => 'tbxHeader',
+'revisionDesc'    => 'tbxHeader',
 'titleStmt'       => 'fileDesc',
 'publicationStmt' => 'fileDesc',
 'sourceDesc'      => 'fileDesc',
@@ -187,39 +187,39 @@ my %renp=(
 '#PCDATA'         => ['title','note','p','item'],
 'body'            => 'text',
 'back'            => 'text',
-'termEntry'       => 'body',
+'conceptEntry'       => 'body',
 'placeholder'     => 'body',
-'refObjectList'   => 'back',
-'refObject'       => 'refObjectList',
+'refObjectSec'   => 'back',
+'refObject'       => 'refObjectSec',
 'item'            => 'refObject',
-'termEntry' 	  => [qw()],
-'langSet' 		  => [qw(termEntry)],
-'tig' 			  => [qw(langSet)],
-'term' 			  => [qw(tig)],
-'termNote' 		  => [qw(tig)],
-'descrip' 		  => [qw(termEntry langSet tig descripGrp)],
-'descripGrp' 	  => [qw(termEntry langSet tig)],
-'admin' 		  => [qw(termEntry langSet tig descripGrp)],
-'transacGrp' 	  => [qw(termEntry langSet tig)],
-'note' 			  => [qw(termEntry langSet tig)],
-'ref' 			  => [qw(termEntry langSet tig)],
-'xref' 			  => [qw(termEntry langSet tig)],
-'transac' 		  => [qw(termEntry langSet tig transacGrp)],
+'conceptEntry' 	  => [qw()],
+'langSec' 		  => [qw(conceptEntry)],
+'termSec' 			  => [qw(langSec)],
+'term' 			  => [qw(termSec)],
+'termNote' 		  => [qw(termSec)],
+'descrip' 		  => [qw(conceptEntry langSec termSec descripGrp)],
+'descripGrp' 	  => [qw(conceptEntry langSec termSec)],
+'admin' 		  => [qw(conceptEntry langSec termSec descripGrp)],
+'transacGrp' 	  => [qw(conceptEntry langSec termSec)],
+'note' 			  => [qw(conceptEntry langSec termSec)],
+'ref' 			  => [qw(conceptEntry langSec termSec)],
+'xref' 			  => [qw(conceptEntry langSec termSec)],
+'transac' 		  => [qw(conceptEntry langSec termSec transacGrp)],
 'transacNote' 	  => [qw(transacGrp)],
 'date' 			  => [qw(transacGrp)],
 'hi' 			  => [qw(term termNote descrip admin note transac transacNote foreign)],
 'foreign' 		  => [qw(termNote descrip admin note transac transacNote foreign)],
-'bpt' 			  => [qw(termNote descrip admin note transac transacNote foreign)],
-'ept' 			  => [qw(termNote descrip admin note transac transacNote foreign)],
+'sc' 			  => [qw(termNote descrip admin note transac transacNote foreign)],
+'ec' 			  => [qw(termNote descrip admin note transac transacNote foreign)],
 'ph' 			  => [qw(termNote descrip admin note transac transacNote foreign)],
 '#PCDATA' 		  => [qw(term termNote descrip admin note ref
-					xref transac transacNotedate hi foreign bpt ept ph)],
+					xref transac transacNotedate hi foreign sc ec ph)],
 );
 
 #hash of all allowed attributes by element
 my %atts=(
-'martif' 		  => ['type','xml:lang'],
-'martifHeader' 	  => ["id"],
+'tbx' 		  => ['type','xml:lang'],
+'tbxHeader' 	  => ["id"],
 'fileDesc' 		  => ["id"],
 'p' 			  => ["id",'type','xml:lang'],
 'titleStmt' 	  => ["id",'xml:lang'],
@@ -233,12 +233,12 @@ my %atts=(
 'text' 			  => ["id"],
 'body' 			  => ["id"],
 'back' 			  => ["id"],
-'refObjectList'   => ["id",'type'],
+'refObjectSec'   => ["id",'type'],
 'refObject' 	  => ["id"],
 'item' 			  => ["id",'type'],
-'termEntry' 	  => [qw(id)],
-'langSet' 		  => [qw(id xml:lang)],
-'tig' 			  => [qw(id)],
+'concecEntry' 	  => [qw(id)],
+'langSec' 		  => [qw(id xml:lang)],
+'termSec' 			  => [qw(id)],
 'term' 			  => [qw(id)],
 'termNote' 		  => [qw(id xml:lang type target datatype)],
 'descrip' 		  => [qw(id xml:lang type target datatype)],
@@ -253,8 +253,8 @@ my %atts=(
 'date' 			  => [qw(id)],
 'hi' 			  => [qw(type target xml:lang)],
 'foreign' 		  => [qw(id xml:lang)],
-'bpt' 			  => [qw(i type)],
-'ept' 			  => [qw(i)],
+'sc' 			  => [qw(i type)],
+'ec' 			  => [qw(i)],
 'ph' 			  => [qw(type)],
 '#PCDATA' 		  => [qw()],
 );
@@ -262,9 +262,9 @@ my %atts=(
 #a hash used in processing terms, which indicates
 #the type of PCDATA acceptable in various elements.
 my %pcstorage = (
-'termEntry'=>'note',#best choice?
-'langSet'=>'note',
-'tig'=>'note',
+'conceptEntry'=>'note',#best choice?
+'langSec'=>'note',
+'termSec'=>'note',
 'transacGrp'=>'transacNote',
 'descripGrp'=>'admin',
 'descrip'=>0,
@@ -279,8 +279,8 @@ my %pcstorage = (
 'date' 		   =>0,
 'hi' 		=>0,
 'foreign' 	=>0,
-'bpt' 		=>0,
-'ept' 		=>0,
+'sc' 		=>0,
+'ec' 		=>0,
 'ph' 		=>0,
 '#PCDATA' 	=>0,
 'p'			=>0,
@@ -329,14 +329,14 @@ sub store {
 	
 }
 
-#clears variables used in processing termEntry elements
+#clears variables used in processing conceptEntry elements
 #so that large files don't leak memory
 sub wipe {
 	#cuts memory usage to a 1/3 of otherwise... not terrible
 	@note = ();
-	@termEntry = ();
-	@langSet = ();
-	@tig = ();
+	@conceptEntry = ();
+	@langSec = ();
+	@termSec = ();
 	@term = ();
 	@termNote = ();
 	@descrip = ();
@@ -350,8 +350,8 @@ sub wipe {
 	@date = ();
 	@hi = ();
 	@foreign = ();
-	@bpt = ();
-	@ept = ();
+	@sc = ();
+	@ec = ();
 	@ph = ();
 }
 
@@ -377,7 +377,7 @@ my %concomp = (
 'DCSName'					=> 'p',
 'XCSURI'					=> 'p',
 'XCSContent'				=> 'p',    
-'respPerson'				=> 'refObjectList',
+'respPerson'				=> 'refObjectSec',
 'fn'						=> 'item',
 'n'							=> 'item',
 'nickname'					=> 'item',
@@ -406,15 +406,15 @@ my %concomp = (
 #'clientpidmap'				=> 'item',
 #'url'						=> 'item',
 #'version'					=> 'item',
-'bold'						=> 'bpt',	   # = Bold                      
-'ulined'					=> 'bpt',     # = Underline              
-'dulined'					=> 'bpt',     # = Double-underlined      
-'color'						=> 'bpt',     # = Color change           
-'struct'					=> 'bpt',     # = XML/SGML structure
-'italic'					=> 'bpt',     # = Italic
-'scap'						=> 'bpt',     # = Small caps
-'font'						=> 'bpt',     # = Font change
-'link'						=> 'bpt',     # = Linked text
+'bold'						=> 'sc',	   # = Bold                      
+'ulined'					=> 'sc',     # = Underline              
+'dulined'					=> 'sc',     # = Double-underlined      
+'color'						=> 'sc',     # = Color change           
+'struct'					=> 'sc',     # = XML/SGML structure
+'italic'					=> 'sc',     # = Italic
+'scap'						=> 'sc',     # = Small caps
+'font'						=> 'sc',     # = Font change
+'link'						=> 'sc',     # = Linked text
 'index'						=> 'ph',	   # = Index marker          these are text     
 'time'						=> 'ph',      # = Time                  markup tags
 'enote'						=> 'ph',      # = End-note                 
@@ -424,7 +424,7 @@ my %concomp = (
 'date'						=> 'ph',      # = Date
 'fnote'						=> 'ph',      # = Footnote
 'alt'						=> 'ph',      # = Alternate text
-'pb'						=> 'ph',      # = Page break			bpt ph types inhereted from
+'pb'						=> 'ph',      # = Page break			sc ph types inhereted from
 );									   # http://www.ttt.org/oscarstandards/tmx/tmxnotes.htm
 
 #allowed picklist values for the listed constraints
@@ -446,9 +446,9 @@ my %picklist = (
 
 #allowed levels for the given constraints
 my %levels = (
-'context'=>['tig'],
-'definition'=>['langSet','termEntry'],
-'subjectField'=>['termEntry'],
+'context'=>['termSec'],
+'definition'=>['langSec','conceptEntry'],
+'subjectField'=>['conceptEntry'],
 );
 
 #Makes sure that data category types occur in the right elements, per XCS
@@ -461,8 +461,8 @@ sub constraint {
 	#only trigger if element has 'type' attribute, indicating DCA data
 	{
 		
-		#ignore the martif
-		return 0 if ($section->name() eq 'martif');
+		#ignore the tbx
+		return 0 if ($section->name() eq 'tbx');
 		
 		if (grep {$type eq $_} keys %concomp) 
 		#Trigger if the type is one of the allowed types
@@ -519,19 +519,19 @@ sub handle_term {
 	#add generic incrementing id tag
 	unless ($section->att('id')) {
 		$section->add_id();
-		printf $log "termEntry ending in $line lacks id, setting id to '%s'.\n",
+		printf $log "conceptEntry ending in $line lacks id, setting id to '%s'.\n",
 		$section->att('id'); 
 	};
-	my $tid = "termEntry ".$section->att('id')." ending in line $line";
+	my $tid = "conceptEntry ".$section->att('id')." ending in line $line";
 	
-	#check attributes of termEntry
+	#check attributes of conceptEntry
 	foreach my $m ($section->att_names()) {
 		
 		unless (grep {$m eq $_} @{$atts{$section->name()}}) {
 			
-			print $log "Attribute $m invalid for termEntry, storing as a note for $tid .\n";
+			print $log "Attribute $m invalid for conceptEntry, storing as a note for $tid .\n";
 			
-			#stores any invalid attributes as a note in termEntry
+			#stores any invalid attributes as a note in conceptEntry
 			my $value = $section->att($m);
 			my $temp = XML::Twig::Elt->new('note'=>$m."::".$value); #added second colon for distinction
 			$temp->paste(last_child=>$section);
@@ -540,7 +540,7 @@ sub handle_term {
 		}
 	}
 	
-	#perform name and attribute check for all children of the termEntry
+	#perform name and attribute check for all children of the conceptEntry
 
 	my @children = $section->children();
 	my $child;
@@ -593,7 +593,7 @@ sub handle_term {
 		
 	}	 
 	
-	#reorders the elements of the termEntry
+	#reorders the elements of the conceptEntry
 	@children = $section->children();
 	
 	while ($child = shift @children) 
@@ -678,17 +678,17 @@ sub handle_term {
 			}               
 			                                            
 			else 
-			#triggers for all other termEntry children
+			#triggers for all other conceptEntry children
 			{                                      
 				                                        
-				if ($cname eq 'tig' and not @langSet) 
-				#puts orphaned tig in new langSet if no langSet exists
+				if ($cname eq 'termSec' and not @langSec) 
+				#puts orphaned termSec in new langSec if no langSec exists
 				{                  
 					
 					####
-					print $log "Creating langSet element for tig in $tid";
+					print $log "Creating langSec element for termSec in $tid";
 					#($child->first_child('term'))
-					my $new = XML::Twig::Elt->new('langSet');
+					my $new = XML::Twig::Elt->new('langSec');
 					$new->paste(first_child=>$section);
 					store($new);
 					$child->move($new);
@@ -697,8 +697,8 @@ sub handle_term {
 				} 
 				
 				else
-				#at this point, the item is either langSet, transacGrp or descripGrp
-				#or it is a tig but langset exists
+				#at this point, the item is either langSec, transacGrp or descripGrp
+				#or it is a termSec but langSec exists
 				{
 					
 					#does a simple search to find the nearest related element 
@@ -733,11 +733,11 @@ sub handle_term {
 		
 	}
 	
-	#tidy termEntry
+	#tidy conceptEntry
 	@children = $section->children();
 	
 	while ($child = shift @children) 
-	#cycles through all children of termEntry again to double-check validity
+	#cycles through all children of conceptEntry again to double-check validity
 	{
 			
 		my $cname = $child->name();
@@ -845,10 +845,10 @@ sub handle_term {
 			
 		}
 		
-		elsif ($cname eq 'tig')
-		#puts tig in right place and sorts children
+		elsif ($cname eq 'termSec')
+		#puts termSec in right place and sorts children
 		{
-			print $log "Sorting tig in $tid.\n";
+			print $log "Sorting termSec in $tid.\n";
 			$child->move(last_child=>$child->parent());
 			
 			$child->
@@ -861,10 +861,10 @@ sub handle_term {
 			
 		}
 		
-		elsif ($cname eq 'langSet') 
+		elsif ($cname eq 'langSec') 
 		#makes lang lower case, probably unnecessary
 		{
-			print $log "Reordering langSet in $tid.\n";
+			print $log "Reordering langSec in $tid.\n";
 			$child->move(last_child=>$child->parent());
 			
 			my $lang =$child->att('xml:lang');
@@ -927,7 +927,7 @@ sub handle_term {
 				
 				unless (grep{$text eq $_} @{$picklist{$type}}) {
 				
-					#store original invalid value in a note, also valid in tig
+					#store original invalid value in a note, also valid in termSec
 					my $note_text = 'original '.$type.':'.$text;
 					
 					my $elt = XML::Twig::Elt->new('note'=>$note_text);
@@ -1082,7 +1082,7 @@ sub name_check {
 	
 }
 
-#called by parser on all elements outside termEntry
+#called by parser on all elements outside conceptEntry
 sub handle_aux {
 	
 	#receive arguments from parser, tree and the element
@@ -1166,28 +1166,28 @@ sub location_control {
 	#pastes to root, sorted in a second anyway.
 	$placeholder->paste($section);
 	
-	#checks location and identity of root, which must be martif
+	#checks location and identity of root, which must be tbx
 	#checks name and identity of root.
 	my $root_name = $section->name();
 	
 	#spotcheck for tbxm files with root tbx
 	if ($root_name eq "tbx") {
-		printf $log "root name 'tbx' invalid for TBX-Basic, changing to 'martif.'\n";
-		$section->set_name("martif");
-		$martif = $section;
+		printf $log "root name 'tbx' invalid for TBX-Basic, changing to 'tbx.'\n";
+		$section->set_name("tbx");
+		$tbx = $section;
 	} 
 	
-	if ($root_name ne "martif") 
-	#if martif is not root
+	if ($root_name ne "tbx") 
+	#if tbx is not root
 	{
 		
 		
-		if (defined $martif) 
-		#retrieves martif if deep in doc
+		if (defined $tbx) 
+		#retrieves tbx if deep in doc
 		{
 			####
-			print $log "Misplaced martif, moving to root.\n";
-			$martif->cut();
+			print $log "Misplaced tbx, moving to root.\n";
+			$tbx->cut();
 			
 		} 
 		
@@ -1196,18 +1196,18 @@ sub location_control {
 		{
 			
 			####
-			print $log "Missing martif, creating and moving to root.\n";
+			print $log "Missing tbx, creating and moving to root.\n";
 			
-			$martif = XML::Twig::Elt->new('martif');
+			$tbx = XML::Twig::Elt->new('tbx');
 			
 		}
 		
-		#roots martif, reorders.
+		#roots tbx, reorders.
 		
 		$section->cut();
-		$t->set_root($martif);
-		$section->paste($martif);
-		$section=$martif;
+		$t->set_root($tbx);
+		$section->paste($tbx);
+		$section=$tbx;
 		
 	}
 	
@@ -1228,7 +1228,7 @@ sub location_control {
 		
 		my $cname = $child->name();
 		
-		if ($cname eq "termEntry") 
+		if ($cname eq "conceptEntry") 
 		#passes missed, misnamed or misplaced termEntries to handler
 		{
 			
@@ -1297,7 +1297,7 @@ sub location_control {
 					$child->move($new);
 				} 
 			
-				elsif ($pname eq 'martifHeader') 
+				elsif ($pname eq 'tbxHeader') 
 				#move it to the fileDesc 
 				{
 									
@@ -1319,7 +1319,7 @@ sub location_control {
 						"Moving p with text '".$child->text().
 						"' to new fileDesc.\n";
 						$new = XML::Twig::Elt->new('fileDesc');
-						$new->paste(first_child=>$martifHeader);
+						$new->paste(first_child=>$tbxHeader);
 						store($new);
 						$child->move($new);
 						push @children,$child,$new;
@@ -1327,26 +1327,26 @@ sub location_control {
 					
 				} 
 			
-				#if the p is in the martif, put it in the martifHeader,
+				#if the p is in the tbx, put it in the tbxHeader,
 				#process it again, it is moved down step by step.
 			
-				elsif ($pname eq 'martif') {
+				elsif ($pname eq 'tbx') {
 					
-					if (defined $martifHeader) {
+					if (defined $tbxHeader) {
 						
 						print $log "Moving p with text '".$child->text().
-						"' to martifHeader.\n";
+						"' to tbxHeader.\n";
 						
-						$child->move($martifHeader);
+						$child->move($tbxHeader);
 						push @children,$child;
 					} else {
 						
-						print $log "martifHeader missing.\n".
+						print $log "tbxHeader missing.\n".
 						"Moving p with text '".$child->text().
-						"' to new martifHeader.\n";
+						"' to new tbxHeader.\n";
 						
-						$new = XML::Twig::Elt->new('martifHeader');
-						$new->paste(first_child=>$martif);
+						$new = XML::Twig::Elt->new('tbxHeader');
+						$new->paste(first_child=>$tbx);
 						store($new);
 						$child->move($new);
 						push @children,$child,$new;
@@ -1373,13 +1373,13 @@ sub location_control {
 				
 				#check for proper parent and move there
 				if (ref($dest) eq 'ARRAY') 
-				#this takes advantage of the fact that only termEntry
+				#this takes advantage of the fact that only conceptEntry
 				#elements have arrays in the renp hash.  #a later 
 				#steamroller needs to overhaul this whole system
 				{
-					print $log "Moving $cname to a new termEntry.\n";
-					#put into a new termEntry for storage
-					$new = XML::Twig::Elt->new('termEntry');
+					print $log "Moving $cname to a new conceptEntry.\n";
+					#put into a new conceptEntry for storage
+					$new = XML::Twig::Elt->new('conceptEntry');
 					$child->move(first_child=>$new);
 					handle_term($t,$new);
 					next; 
@@ -1398,14 +1398,14 @@ sub location_control {
 				} 
 				
 				else 
-				#create proper parent and stuff it in the martif
+				#create proper parent and stuff it in the tbx
 				#then put it back on the stack; it will be processed
 				#in next pass and moved to the correct place.
 				{					
 					print $log "Moving $cname to new $dest.\n";
 					$new = XML::Twig::Elt->new($dest);
 					store($new);
-					$new->paste(last_child=>$martif);
+					$new->paste(last_child=>$tbx);
 					push @children,$new;
 					$child->move(last_child => $new);
 					
@@ -1439,7 +1439,7 @@ sub location_control {
 		#or make it
 		{
 			$encodingDesc=XML::Twig::Elt->new('encodingDesc');
-			$encodingDesc->paste($martifHeader);
+			$encodingDesc->paste($tbxHeader);
 			my $elt = XML::Twig::Elt->new(p=>{type=>'XCSURI'},'TBXBasicXCSV02.xcs');
 			$elt->paste($encodingDesc);
 		}
@@ -1448,7 +1448,7 @@ sub location_control {
 	
 	foreach my $c (@aux_items) 
 	#condition to filter out elements with single children, and ignore undefined
-	#also ignores the body since all termEntry have been removed
+	#also ignores the body since all conceptEntry have been removed
 	{
 		
 		if ($#{$comp{$c}}>0 and $c ne 'body') {
@@ -1504,11 +1504,11 @@ twig_handlers => {
 	
 	output_html_doctype => 1,
 	
-	#Handles termEntry whole, including children
-	termEntry => \&handle_term,
+	#Handles conceptEntry whole, including children
+	conceptEntry => \&handle_term,
 	
-	#ignores children of termEntry, preventing double parsing 
-	"termEntry//*" => sub {return 1;},
+	#ignores children of conceptEntry, preventing double parsing 
+	"conceptEntry//*" => sub {return 1;},
 	
 	#handles all elements.
 	_default_ => \&handle_aux,
@@ -1530,19 +1530,19 @@ unless ($twig->doctype()=~/TBXBasiccoreStructV02/)
 
 {
 	printf $log "Setting doctype declaration to TBXBasiccoreStructV02.dtd.\n";
-	$twig->set_doctype('martif',"TBXBasiccoreStructV02.dtd");
+	$twig->set_doctype('tbx',"TBXBasiccoreStructV02.dtd");
 	
 }
 
 
 
-#stores the parsed non-termEntry data to a string
+#stores the parsed non-conceptEntry data to a string
 my $auxilliary = $twig->sprint();
 
 #fix a weird glitch with XML::Twig
 $auxilliary =~ s/><!/>\n<!/g;
 
-#close the termEntry file and open for reading
+#close the conceptEntry file and open for reading
 close($tft);
 open($tft,'<','temp_file_text.txt');
 
@@ -1554,7 +1554,7 @@ open(my $out, ">:encoding(UTF-8)",$out_name);
 
 foreach my $line (split(/\n/,$auxilliary)) {
 	if ($line =~ /      <placeholder/) 
-	#inserts all termEntry in place of placeholder element
+	#inserts all conceptEntry in place of placeholder element
 	{
 		while (<$tft>) 
 		
