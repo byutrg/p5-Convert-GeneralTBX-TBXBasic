@@ -1,0 +1,16 @@
+
+      <conceptEntry id="c1">
+        <note>responsibility::10</note>
+        <langSec xml:lang="en">
+          <termSec>
+            <term>water</term>
+          </termSec>
+        </langSec>
+      </conceptEntry>
+      <conceptEntry id="c2">
+        <langSec xml:lang="es">
+          <termSec>
+            <term>água</term>
+          </termSec>
+        </langSec>
+      </conceptEntry>
