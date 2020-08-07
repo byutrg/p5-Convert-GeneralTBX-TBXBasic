@@ -1170,12 +1170,12 @@ sub location_control {
 	#checks name and identity of root.
 	my $root_name = $section->name();
 	
-	#spotcheck for tbxm files with root tbx
-	if ($root_name eq "tbx") {
-		printf $log "root name 'tbx' invalid for TBX-Basic, changing to 'tbx.'\n";
-		$section->set_name("tbx");
-		$tbx = $section;
-	} 
+	#spotcheck for tbxm files with root tbx #caleb106 No case needed for TBX v3
+	#if ($root_name eq "tbx") {
+	#	printf $log "root name 'tbx' invalid for TBX-Basic, changing to 'tbx.'\n";
+	#	$section->set_name("tbx");
+	#	$tbx = $section;
+	#} 
 	
 	if ($root_name ne "tbx") 
 	#if tbx is not root
