@@ -1530,7 +1530,7 @@ $twig->parsefile($file);
 #steamroller should leave things alone unless they are wrong
 #unless ($twig->doctype()=~/TBXBasiccoreStructV02/)
 
-#sub addSchemas {  #caleb106 add TBX-Basic Schemas
+#sub addSchemas {  #caleb106 add TBX
   #          my $dtd = XML::Twig::DTD->new('model');
 #			print $dtd;
 #}
