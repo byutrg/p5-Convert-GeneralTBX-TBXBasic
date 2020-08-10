@@ -1389,7 +1389,7 @@ sub location_control {
 				elsif (defined ${$refs{$dest}}) 
 				#puts in proper parent if it exists
 				{
-					####
+					
 					print $log "Moving element $cname to $dest\n";
 					
 					$child->cut();
@@ -1500,6 +1500,8 @@ pretty_print => 'indented',
 
 output_encoding =>'utf-8', #probably important
 
+load_DTD => 1, #caleb106 add DTD handler
+
 twig_handlers => {
 	
 	output_html_doctype => 1,
@@ -1526,7 +1528,13 @@ $twig->parsefile($file);
 
 #set correct doctype if it is wrong
 #steamroller should leave things alone unless they are wrong
-#unless ($twig->doctype()=~/TBXBasiccoreStructV02/) 
+#unless ($twig->doctype()=~/TBXBasiccoreStructV02/)
+
+#sub addSchemas {  #caleb106 add TBX-Basic Schemas
+  #          my $dtd = XML::Twig::DTD->new('model');
+#			print $dtd;
+#}
+
 
 #{ #caleb106 - Removed v2 Doctype declaration
 #	printf $log "Setting doctype declaration to TBXBasiccoreStructV02.dtd.\n";
