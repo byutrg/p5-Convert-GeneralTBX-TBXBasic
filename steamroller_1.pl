@@ -513,21 +513,27 @@ sub handle_term {
 	
 	my ($t,$section) = @_;
 	
-	####
 	my $line = $t->current_line();
-	
-	#add generic incrementing id tag
+    
+    #add generic incrementing id tag
 	unless ($section->att('id')) {
 		$section->add_id();
 		printf $log "conceptEntry ending in $line lacks id, setting id to '%s'.\n",
 		$section->att('id'); 
 	};
+    
+    #caleb106 adds "C" to the conceptmEntry ID if the ID is just a number
+    unless ($section->att('id') !~ /^[0-9]/){
+        my $id = $section->att('id');
+        $section->set_id("C".$id);
+    }
+    
 	my $tid = "conceptEntry ".$section->att('id')." ending in line $line";
 	
 	#check attributes of conceptEntry
 	foreach my $m ($section->att_names()) {
-		
-		unless (grep {$m eq $_} @{$atts{$section->name()}}) {
+        
+        unless (grep {$m eq $_} @{$atts{$section->name()}}) {
 			
 			print $log "Attribute $m invalid for conceptEntry, storing as a note for $tid .\n";
 			
