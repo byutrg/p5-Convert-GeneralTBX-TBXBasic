@@ -1502,7 +1502,7 @@ until ($file && $file =~ m/(tbx|xml)\Z/ && -e $file) { #caleb106 Removed TBXm fi
 #constructs the TWIG
 my $twig = XML::Twig->new(
 	
-pretty_print => 'indented',
+pretty_print => 'record', #caleb106 Changed the PP output to avoid problems with root element indentation.
 
 output_encoding =>'utf-8', #probably important
 
@@ -1532,15 +1532,15 @@ $twig->set_id_seed('c');
 
 $twig->parsefile($file);
 
+my $dtd = $twig->DTD;
+print $dtd;
+
 #set correct doctype if it is wrong
 #steamroller should leave things alone unless they are wrong
-#unless ($twig->doctype()=~/TBXBasiccoreStructV02/)
-
-#sub addSchemas {  #caleb106 add TBX
-  #          my $dtd = XML::Twig::DTD->new('model');
-#			print $dtd;
+#unless ($twig->DTD =~/TBXBasiccoreStructV02/)
+#{
+    
 #}
-
 
 #{ #caleb106 - Removed v2 Doctype declaration
 #	printf $log "Setting doctype declaration to TBXBasiccoreStructV02.dtd.\n";
