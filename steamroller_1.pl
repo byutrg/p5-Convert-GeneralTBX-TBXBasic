@@ -16,6 +16,10 @@ my $tolerance = 0.4;
 #and add a brand marker to identify the file as a steamroller-generated file.
 my $version = 1.2;
 
+#TBX Basic v3 Schema 
+my $schema1 = '<?xml-model href="https://raw.githubusercontent.com/LTAC-Global/TBX-Basic_dialect/master/DCA/TBXcoreStructV03_TBX-Basic_integrated.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>';
+my $schema2 = '<?xml-model href="https://raw.githubusercontent.com/LTAC-Global/TBX-Basic_dialect/master/DCA/TBX-Basic_DCA.sch" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>';
+
 my $file;
 #opens temporary file to store conceptEntry elements
 open (my $tft,'>','temp_file_text.txt'); 
@@ -1496,11 +1500,6 @@ until ($file && $file =~ m/(tbx|xml)\Z/ && -e $file) { #caleb106 Removed TBXm fi
 	chomp $file;
 }
 
-#Add the correct schema for TBX-Basic
-
-
-
-
 #constructs the TWIG
 my $twig = XML::Twig->new(
 	
@@ -1562,23 +1561,43 @@ $out_name = 'result.tbx' if $version<1;
 open(my $out, ">:encoding(UTF-8)",$out_name);
 
 foreach my $line (split(/\n/,$auxilliary)) {
-	if ($line =~ /      <placeholder/) 
+    
+    if ($line =~ /      <placeholder/) 
 	#inserts all conceptEntry in place of placeholder element
 	{
 		while (<$tft>) 
-		
 		{
-			print $out "$_" if ($_ ne "\n");
+            #cale106 Added correction for schema for TBX v3
+            if ($_ == 2) {
+                my $line = $.;
+                if ($line =~/<\?xml-model href=".+?".+?\?>/)
+                {
+                    $line = $schema1;
+                }
+            }
+            if ($_ == 3) {
+                my $line = $.;
+                if ($line =~/<\?xml-model href=".+?".+?\?>/)
+                {
+                    $line = $schema2;
+                }
+            }
+            if ($_ ne "\n")
+            { 
+             print $out "$_";
+            }
+           
+			
 		}
 		
 	}
 	
 	else 
-	
 	{
 		print $out $line;
-	}
-	
+    
+    }
+    
 	print $out "\n";
 }
 
