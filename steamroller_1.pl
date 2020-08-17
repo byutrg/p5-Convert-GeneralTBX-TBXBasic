@@ -14,7 +14,7 @@ my $tolerance = 0.4;
 
 #if $version is greater than 1, the steamroller will delete temporary files
 #and add a brand marker to identify the file as a steamroller-generated file.
-my $version = 1.01;
+my $version = 1.2;
 
 my $file;
 #opens temporary file to store conceptEntry elements
@@ -1496,6 +1496,8 @@ until ($file && $file =~ m/(tbx|xml)\Z/ && -e $file) { #caleb106 Removed TBXm fi
 	chomp $file;
 }
 
+#Add the correct schema for TBX-Basic
+
 
 
 
@@ -1505,8 +1507,6 @@ my $twig = XML::Twig->new(
 pretty_print => 'record', #caleb106 Changed the PP output to avoid problems with root element indentation.
 
 output_encoding =>'utf-8', #probably important
-
-load_DTD => 1, #caleb106 add DTD handler
 
 twig_handlers => {
 	
@@ -1531,9 +1531,6 @@ twig_handlers => {
 $twig->set_id_seed('c');
 
 $twig->parsefile($file);
-
-my $dtd = $twig->DTD;
-print $dtd;
 
 #set correct doctype if it is wrong
 #steamroller should leave things alone unless they are wrong
