@@ -17,8 +17,9 @@ my $tolerance = 0.4;
 my $version = 1.2;
 
 #TBX Basic v3 Schema 
-my $schema1 = '<?xml-model href="https://raw.githubusercontent.com/LTAC-Global/TBX-Basic_dialect/master/DCA/TBXcoreStructV03_TBX-Basic_integrated.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>';
-my $schema2 = '<?xml-model href="https://raw.githubusercontent.com/LTAC-Global/TBX-Basic_dialect/master/DCA/TBX-Basic_DCA.sch" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>';
+
+my $v3Schema = '<?xml-model href="https://raw.githubusercontent.com/LTAC-Global/TBX-Basic_dialect/master/DCA/TBX-Basic_DCA.sch" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>';
+my $v3rngSchema = '<?xml-model href="https://raw.githubusercontent.com/LTAC-Global/TBX-Basic_dialect/master/DCA/TBXcoreStructV03_TBX-Basic_integrated.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>';
 
 my $file;
 #opens temporary file to store conceptEntry elements
@@ -1510,7 +1511,7 @@ output_encoding =>'utf-8', #probably important
 twig_handlers => {
 	
 	output_html_doctype => 1,
-	
+    
 	#Handles conceptEntry whole, including children
 	conceptEntry => \&handle_term,
 	
@@ -1545,10 +1546,13 @@ $twig->parsefile($file);
 #}
 
 #stores the parsed non-conceptEntry data to a string
-my $auxilliary = $twig->sprint();
+my $auxiliary = $twig->sprint();
 
 #fix a weird glitch with XML::Twig
-$auxilliary =~ s/><!/>\n<!/g;
+$auxiliary =~ s/><!/>\n<!/g;
+
+#caleb106 Add a linebreak in between xml schema declarations
+$auxiliary =~ s/(<\?xml-model href=".+?.sch".+?\?>)/$1\n/;
 
 #close the conceptEntry file and open for reading
 close($tft);
@@ -1560,41 +1564,36 @@ $out_name =~ s/(.+?)\..+/$1_steamroller.tbx/;
 $out_name = 'result.tbx' if $version<1;
 open(my $out, ">:encoding(UTF-8)",$out_name);
 
-foreach my $line (split(/\n/,$auxilliary)) {
+foreach my $line (split(/\n/,$auxiliary)) {
     
     if ($line =~ /      <placeholder/) 
 	#inserts all conceptEntry in place of placeholder element
 	{
 		while (<$tft>) 
-		{
-            #cale106 Added correction for schema for TBX v3
-            if ($_ == 2) {
-                my $line = $.;
-                if ($line =~/<\?xml-model href=".+?".+?\?>/)
-                {
-                    $line = $schema1;
-                }
-            }
-            if ($_ == 3) {
-                my $line = $.;
-                if ($line =~/<\?xml-model href=".+?".+?\?>/)
-                {
-                    $line = $schema2;
-                }
-            }
+		{   
             if ($_ ne "\n")
             { 
              print $out "$_";
-            }
-           
-			
+            }	
 		}
 		
 	}
 	
 	else 
 	{
-		print $out $line;
+       
+        #cale106 Added correction for schema for TBX v3
+        if ($line =~/<\?xml-model href=".+?.sch".+?\?>/)
+        {
+             $line = $v3Schema;
+        }
+        if ($line =~/<\?xml-model href=".+?.rng".+?\?>/)
+        {
+            $line = $v3rngSchema; 
+        }
+        
+        print $out $line 
+       
     
     }
     
