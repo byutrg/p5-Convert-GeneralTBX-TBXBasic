@@ -1118,10 +1118,21 @@ sub handle_aux {
 		$section->set_att("id"=>$id);
 		
 		#for aux items, make sourceDesc, which is made for this kind of info
-		$section->set_name("sourceDesc");
+		$section->set_name("p");
 		
 		#store it. will not fail because sourceDesc is stackable
-		store($section);
+		#store($section);
+        
+        # check to make sure sourceDesc exists in the tree
+        # this logic should probably be abstracted to its own sub
+        my $sourceDesc = $t->root->first_descendant("sourceDesc");
+        if (!$sourceDesc) {
+            # if it doesn't exist, create it and stick it in the tree.  Note, this does *not*
+            # handle the case of if fileDesc doesn't exist.
+            $sourceDesc = XML::Twig::Elt->new('sourceDesc');
+            $sourceDesc->paste($t->root->first_descendant("fileDesc"));
+        }
+        $section->move(last_child => $sourceDesc);
 	}
 	
 	#check attributes
@@ -1163,9 +1174,14 @@ sub location_control {
 		);
 
 		#pastes this to the root, it will be sorted eventually
-		$signature_p->paste($signature);
-		$signature->paste($section);
-		store($signature);
+        my $sourceDesc = $t->root->first_descendant("sourceDesc");
+        if ($sourceDesc) {
+            $signature_p->paste(last_child => $sourceDesc);
+        } else {
+            $signature_p->paste($signature);
+            $signature->paste($section);
+            store($signature);
+        }
 		
 	}
 	
